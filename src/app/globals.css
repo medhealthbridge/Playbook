@@ -1049,6 +1049,23 @@ html[data-motion="reduced"] .scroll-cue span.bar {
   z-index: -1;
   background: linear-gradient(180deg, transparent 30%, rgba(16, 23, 19, 0.92) 85%);
 }
+/* photographic cards: deeper scrim so copy stays readable on any photo */
+.sport-card.has-photo::after {
+  background:
+    linear-gradient(180deg, rgba(16, 23, 19, 0.35) 0%, transparent 22%),
+    linear-gradient(180deg, transparent 35%, rgba(16, 23, 19, 0.7) 62%, rgba(16, 23, 19, 0.96) 100%);
+}
+.sport-card .illustrative {
+  position: absolute;
+  top: 46px;
+  left: 16px;
+  font-size: 0.66rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(245, 247, 240, 0.75);
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.6);
+}
 .sport-card:hover {
   transform: translateY(-4px);
   box-shadow: 0 24px 50px -24px rgba(16, 23, 19, 0.7);
@@ -1078,6 +1095,7 @@ html[data-motion="reduced"] .scroll-cue span.bar {
 .sport-card.sport-cta {
   grid-column: span 3;
   min-height: 0;
+  padding-top: 58px; /* room for the badge above the heading */
   text-decoration: none;
   background:
     repeating-linear-gradient(90deg, transparent 0 79px, rgba(215, 255, 63, 0.07) 79px 80px),

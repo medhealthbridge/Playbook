@@ -4,7 +4,8 @@ import { useMemo, useState } from "react";
 import { COPY } from "@/content/copy";
 import { FAQ } from "@/content/faq";
 import { PLAYER_PLANS, PRICE_TBA, VENUE_PLANS, venuePlanById } from "@/content/plans";
-import { SPORTS, sportById } from "@/content/sports";
+import Image from "next/image";
+import { SPORTS, SPORT_PHOTOS, sportById } from "@/content/sports";
 import { EVENTS, VENUES } from "@/content/venues";
 import { isBlocking } from "@/lib/booking/rules";
 import { addDays, formatDate, formatPHP, formatRange, manilaToday, parseHM } from "@/lib/booking/time";
@@ -47,7 +48,7 @@ export function SportsSection() {
               <button
                 key={s.id}
                 type="button"
-                className={`sport-card ${s.featured ? "featured" : ""}`}
+                className={`sport-card ${s.featured ? "featured" : ""} ${SPORT_PHOTOS[s.id] ? "has-photo" : ""}`}
                 aria-expanded={selected === s.id}
                 aria-controls="sport-panel"
                 onClick={() => {
@@ -55,7 +56,20 @@ export function SportsSection() {
                   requestAnimationFrame(() => document.getElementById("sport-panel")?.scrollIntoView({ block: "nearest" }));
                 }}
               >
-                <span className="art"><SportArt sport={s.id} /></span>
+                <span className="art">
+                  {SPORT_PHOTOS[s.id] ? (
+                    <Image
+                      src={SPORT_PHOTOS[s.id]!.src}
+                      alt=""
+                      fill
+                      sizes={s.featured ? "(max-width: 1020px) 100vw, 50vw" : "(max-width: 1020px) 50vw, 25vw"}
+                      style={{ objectFit: "cover", objectPosition: SPORT_PHOTOS[s.id]!.position ?? "center" }}
+                    />
+                  ) : (
+                    <SportArt sport={s.id} />
+                  )}
+                </span>
+                {SPORT_PHOTOS[s.id]?.illustrative && <span className="illustrative" aria-hidden="true">Illustrative</span>}
                 <span className="avail">
                   {n > 0 ? (
                     <span className="badge badge-lime">{n} to rent</span>

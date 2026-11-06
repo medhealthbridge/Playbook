@@ -85,3 +85,12 @@ export const SPORTS: Sport[] = [
 ];
 
 export const sportById = (id: SportId) => SPORTS.find((s) => s.id === id)!;
+
+/**
+ * Photographic card images. Add a sport here once its file is in
+ * public/assets/sports/ (see docs/SPORT_PHOTO_PROMPTS.md). Sports without a
+ * photo keep their illustrated court-diagram artwork.
+ * `illustrative: true` = AI-generated or staged image, labelled as such on the
+ * card so it is never mistaken for real venue photography.
+ */
+export const SPORT_PHOTOS: Partial<Record<SportId, { src: string; alt: string; illustrative: boolean; position?: string }>> = {};

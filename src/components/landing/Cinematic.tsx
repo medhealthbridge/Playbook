@@ -122,7 +122,21 @@ export function Cinematic({ children }: { children: ReactNode }) {
     ];
     applyPanels(scrollState.target);
     ScrollTrigger.refresh();
+    // Sections below the journey grow once demo data loads; re-measure trigger
+    // positions whenever the page height changes so the finale always fires.
+    let raf = 0;
+    let lastH = document.documentElement.scrollHeight;
+    const ro = new ResizeObserver(() => {
+      const h = document.documentElement.scrollHeight;
+      if (h === lastH) return;
+      lastH = h;
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => ScrollTrigger.refresh());
+    });
+    ro.observe(document.body);
     return () => {
+      ro.disconnect();
+      cancelAnimationFrame(raf);
       triggers.forEach((t) => t.kill());
       for (const el of panels) {
         el.inert = false;

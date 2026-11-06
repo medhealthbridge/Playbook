@@ -2,7 +2,7 @@
 // The single WebGL canvas. Loaded lazily (never blocks the HTML booking UI),
 // paused when off-screen, and falls back silently if WebGL fails.
 import { Canvas } from "@react-three/fiber";
-import { Component, useEffect, useState, type ReactNode } from "react";
+import { Component, Suspense, useEffect, useState, type ReactNode } from "react";
 import * as THREE from "three";
 import { scrollState } from "./timeline";
 import { World } from "./World";
@@ -18,6 +18,14 @@ class GLBoundary extends Component<{ onError: () => void; children: ReactNode },
   render() {
     return this.state.failed ? null : this.props.children;
   }
+}
+
+function Ready({ onReady }: { onReady: () => void }) {
+  useEffect(() => {
+    const id = requestAnimationFrame(() => requestAnimationFrame(onReady));
+    return () => cancelAnimationFrame(id);
+  }, [onReady]);
+  return null;
 }
 
 export default function Experience({ onReady, onFail }: { onReady: () => void; onFail: () => void }) {
@@ -47,7 +55,8 @@ export default function Experience({ onReady, onFail }: { onReady: () => void; o
   return (
     <GLBoundary onError={onFail}>
       <Canvas
-        dpr={mobile ? [1, 1.25] : [1, 1.75]}
+        dpr={mobile ? [1, 1.25] : [1, 1.5]}
+        shadows={mobile ? false : "soft"}
         frameloop={visible ? "always" : "never"}
         gl={{ antialias: !mobile, powerPreference: "high-performance", alpha: false }}
         camera={{ fov: 50, near: 0.1, far: 240, position: [0, 2.3, 22] }}
@@ -58,11 +67,14 @@ export default function Experience({ onReady, onFail }: { onReady: () => void; o
             e.preventDefault();
             onFail();
           });
-          requestAnimationFrame(onReady);
         }}
         aria-hidden="true"
       >
-        <World mobile={mobile} />
+        {/* World suspends until HDRIs, textures and models load; the HTML stays usable meanwhile */}
+        <Suspense fallback={null}>
+          <World mobile={mobile} />
+          <Ready onReady={onReady} />
+        </Suspense>
       </Canvas>
     </GLBoundary>
   );

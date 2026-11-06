@@ -89,6 +89,22 @@ tournament brackets, scorekeeping, coaching, automatic highlight detection.
 | 3D scenes | `src/components/three/World.tsx` (`Courtside`, `BookWorld`, `PlayWorld`, `ReplayWorld`, `Convergence`) |
 | Real photos/video | replace `SportArt` usages with `<img>`/`<video>`; keep generated concept art distinct from real venue photography |
 
+## 3D assets & realism layer
+
+`public/assets/` holds the optimized subset of the generated asset bundle (≈4.3 MB, from ≈110 MB):
+arena + exterior HDRIs (1K/512), six PBR texture sets at 1024 (base colour, normal, packed AO/roughness/metal),
+the bleacher and bench models, light-beam and dust sprites, and the silent ambient arena loop.
+Rebuild it from a fresh bundle with:
+
+```bash
+python3 -I scripts/prepare_assets.py <folder-containing-public/assets>
+```
+
+`src/components/three/Realism.tsx` uses them for HDRI lighting, a reflective clear-coated hardwood floor,
+camera-following soft shadows, bloom on lights and lime lines, light shafts, drifting dust, a dribbling ball
+and the video screen-gate. Mirror floor, shadows, bloom and light shafts are desktop-only; mobile keeps the
+HDRI + PBR materials. Sources and licences: `public/assets/CREDITS.md`.
+
 ## Project map
 
 ```

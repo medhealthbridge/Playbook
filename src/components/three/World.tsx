@@ -3,13 +3,26 @@
 // PLAY → REPLAY gallery → convergence into the wordmark. One camera path,
 // driven by the master scroll timeline (see timeline.ts).
 import { useFrame, useThree } from "@react-three/fiber";
-import { useLayoutEffect, useMemo, useRef } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import { FontLoader } from "three/examples/jsm/loaders/FontLoader.js";
 import { TextGeometry } from "three/examples/jsm/geometries/TextGeometry.js";
 import fontJson from "three/examples/fonts/helvetiker_bold.typeface.json";
 import { scrollState, smoothstep } from "./timeline";
-import { basketballTexture, concrete, fonts, hardwood, highlightTexture, panelTexture } from "./textures";
+import { basketballTexture, fonts, highlightTexture, panelTexture } from "./textures";
+import {
+  ArenaFloor,
+  Benches,
+  Bleachers,
+  DribbleBall,
+  Dust,
+  EnvironmentSwitcher,
+  LightShafts,
+  PostFX,
+  ShadowRig,
+  useArenaVideo,
+  usePBR,
+} from "./Realism";
 
 const LIME = new THREE.Color("#D7FF3F");
 const ORANGE = new THREE.Color("#FF7648");
@@ -148,11 +161,15 @@ function CameraRig({ mobile, timeRef }: { mobile: boolean; timeRef: React.Mutabl
       p.x += par.current.x;
       p.y -= par.current.y;
     }
+    // gentle "breathing" so the camera never feels locked off
+    const t = performance.now() / 1000;
+    p.y += Math.sin(t * 0.55) * 0.035;
+    p.x += Math.sin(t * 0.37) * 0.045;
     cam.position.copy(p);
     cam.lookAt(l);
     if (light.current) light.current.position.set(p.x, p.y + 4, p.z - 7);
   });
-  return <pointLight ref={light} intensity={90} distance={42} decay={1.4} color="#fff3df" />;
+  return <pointLight ref={light} intensity={mobile ? 70 : 32} distance={40} decay={1.5} color="#fff3df" />;
 }
 
 // ------------------------------------------------------------ helpers
@@ -234,14 +251,31 @@ function Panel({
   );
 }
 
-function Box({ args, position, color, emissive, rotation }: { args: V; position: V; color: THREE.ColorRepresentation; emissive?: boolean; rotation?: V }) {
+/** `glow` > 1 pushes an emissive above the bloom threshold. */
+function Box({ args, position, color, emissive, rotation, glow = 1, material }: { args: V; position: V; color?: THREE.ColorRepresentation; emissive?: boolean; rotation?: V; glow?: number; material?: THREE.Material }) {
+  const c = useMemo(() => new THREE.Color(color ?? "#ffffff").multiplyScalar(glow), [color, glow]);
   return (
-    <mesh position={position} rotation={rotation}>
+    <mesh position={position} rotation={rotation} material={material}>
       <boxGeometry args={args} />
-      {emissive ? <meshBasicMaterial color={color} toneMapped={false} /> : <meshStandardMaterial color={color} roughness={0.8} />}
+      {!material && (emissive ? <meshBasicMaterial color={c} toneMapped={false} /> : <meshStandardMaterial color={color} roughness={0.8} />)}
     </mesh>
   );
 }
+
+const LIGHT_GLOW = new THREE.Color("#fffbe8").multiplyScalar(4);
+const ROUTE_GLOW = new THREE.Color("#D7FF3F").multiplyScalar(1.8);
+
+// Shared PBR parameter objects (stable identities for usePBR memoisation)
+const CONCRETE_PARAMS = { roughness: 1, color: new THREE.Color("#9aa19c") };
+const PLASTER_PARAMS = { roughness: 1 };
+const ACRYLIC_PARAMS = { roughness: 1 };
+const PANEL_PARAMS = { roughness: 1, color: new THREE.Color("#8d978f") };
+const FELT_PARAMS = { roughness: 1 };
+const R_GROUND: [number, number] = [35, 15];
+const R_FACADE: [number, number] = [8, 4];
+const R_COURT: [number, number] = [5, 7];
+const R_PANEL: [number, number] = [140, 18];
+const R_FELT: [number, number] = [5, 3];
 
 /** Flat line on the floor (court markings). */
 function FloorLine({ from, to, width = 0.08, color = WHITE, y = 0.015 }: { from: [number, number]; to: [number, number]; width?: number; color?: THREE.ColorRepresentation; y?: number }) {
@@ -419,36 +453,31 @@ function Spot({ position, target }: { position: V; target: V }) {
 
 // ------------------------------------------------------------ scenes
 function Courtside({ mobile }: { mobile: boolean }) {
-  const ground = useMemo(() => {
-    const t = concrete();
-    t.repeat.set(30, 15);
-    return t;
-  }, []);
-  const wall = "#d9ddd3";
+  const ground = usePBR("concrete_polished", R_GROUND, CONCRETE_PARAMS);
+  const plaster = usePBR("wall_plaster_white", R_FACADE, PLASTER_PARAMS);
+  const acrylic = usePBR("court_acrylic_blue", R_COURT, ACRYLIC_PARAMS);
   return (
     <group>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 10]}>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 10]} material={ground} receiveShadow>
         <planeGeometry args={[140, 60]} />
-        <meshStandardMaterial map={ground} roughness={0.95} />
       </mesh>
       {/* Pavilion facade with entrance */}
-      <Box args={[26, 14, 1]} position={[-17, 7, -20.5]} color={wall} />
-      <Box args={[26, 14, 1]} position={[17, 7, -20.5]} color={wall} />
-      <Box args={[8, 7.8, 1]} position={[0, 10.1, -20.5]} color={wall} />
+      <Box args={[26, 14, 1]} position={[-17, 7, -20.5]} material={plaster} />
+      <Box args={[26, 14, 1]} position={[17, 7, -20.5]} material={plaster} />
+      <Box args={[8, 7.8, 1]} position={[0, 10.1, -20.5]} material={plaster} />
       {/* lime door frame */}
-      <Box args={[0.18, 6.2, 0.2]} position={[-4.05, 3.1, -19.95]} color={LIME} emissive />
-      <Box args={[0.18, 6.2, 0.2]} position={[4.05, 3.1, -19.95]} color={LIME} emissive />
-      <Box args={[8.3, 0.18, 0.2]} position={[0, 6.2, -19.95]} color={LIME} emissive />
+      <Box args={[0.18, 6.2, 0.2]} position={[-4.05, 3.1, -19.95]} color={LIME} emissive glow={2} />
+      <Box args={[0.18, 6.2, 0.2]} position={[4.05, 3.1, -19.95]} color={LIME} emissive glow={2} />
+      <Box args={[8.3, 0.18, 0.2]} position={[0, 6.2, -19.95]} color={LIME} emissive glow={2} />
       {/* canopy + downlight strip */}
       <Box args={[22, 0.4, 5]} position={[0, 8.6, -17.6]} color="#1a221e" />
-      <Box args={[20, 0.05, 0.3]} position={[0, 8.38, -15.6]} color="#fffbe8" emissive />
+      <Box args={[20, 0.05, 0.3]} position={[0, 8.38, -15.6]} color="#fffbe8" emissive glow={3} />
       {/* fascia stripe */}
-      <Box args={[52, 0.25, 0.1]} position={[0, 13.2, -19.95]} color={LIME} emissive />
+      <Box args={[52, 0.25, 0.1]} position={[0, 13.2, -19.95]} color={LIME} emissive glow={2} />
 
       {/* outdoor practice court */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[8, 0.008, 11]}>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[8, 0.008, 11]} material={acrylic} receiveShadow>
         <planeGeometry args={[11, 15]} />
-        <meshStandardMaterial color="#24557d" roughness={0.85} />
       </mesh>
       <Rect x={8} z={11} w={10.4} d={14.4} />
       <Rect x={8} z={6.4} w={4.2} d={5.2} />
@@ -462,23 +491,18 @@ function Courtside({ mobile }: { mobile: boolean }) {
       {([[-9, 6], [15, -6]] as [number, number][]).map(([x, z], i) => (
         <group key={i} position={[x, 0, z]}>
           <Box args={[0.25, 11, 0.25]} position={[0, 5.5, 0]} color="#2b3530" />
-          <Box args={[2.2, 0.5, 0.6]} position={[0, 11, 0]} color="#fffbe8" emissive />
+          <Box args={[2.2, 0.5, 0.6]} position={[0, 11, 0]} color="#fffbe8" emissive glow={4} />
         </group>
       ))}
       <Spot position={[-9, 11, 6]} target={[0, 0, -10]} />
       <Spot position={[15, 11, -6]} target={[6, 0, 8]} />
-      <pointLight position={[0, 5, -26]} intensity={120} distance={30} decay={1.4} color="#ffe2b8" />
+      <pointLight position={[0, 5, -26]} intensity={55} distance={26} decay={1.5} color="#ffe2b8" />
     </group>
   );
 }
 
 function Arena({ mobile }: { mobile: boolean }) {
-  const wood = useMemo(() => {
-    const t = hardwood();
-    t.repeat.set(11, 45);
-    t.rotation = Math.PI / 2;
-    return t;
-  }, []);
+  const panel = usePBR("panel_acoustic_dark", R_PANEL, PANEL_PARAMS);
   const lights = useMemo(() => {
     const out: V[] = [];
     for (let z = -28; z > -200; z -= mobile ? 16 : 10) for (const x of [-7, 7]) out.push([x, 13, z]);
@@ -498,22 +522,19 @@ function Arena({ mobile }: { mobile: boolean }) {
   }, [lights]);
   return (
     <group>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, -110]}>
-        <planeGeometry args={[44, 180]} />
-        <meshStandardMaterial map={wood} roughness={0.42} metalness={0.05} />
-      </mesh>
+      <ArenaFloor quality={mobile ? "low" : "high"} />
       <instancedMesh ref={lightMesh} args={[undefined, undefined, lights.length]}>
         <boxGeometry args={[5, 0.12, 0.5]} />
-        <meshBasicMaterial color="#fffbe8" toneMapped={false} />
+        <meshBasicMaterial color={LIGHT_GLOW} toneMapped={false} />
       </instancedMesh>
-      {/* stands with lime edge lines for parallax */}
+      {!mobile && <LightShafts positions={lights} />}
+      <Dust count={mobile ? 350 : 1400} from={-24} to={-185} />
+      {/* seating bowl with lime edge lines for parallax */}
+      <Bleachers shadows={!mobile} mobile={mobile} />
       {[-1, 1].map((s) => (
         <group key={s}>
-          {[0, 1, 2].map((tier) => (
-            <Box key={tier} args={[3, 1 + tier * 1.1, 172]} position={[s * (17 + tier * 2.6), (1 + tier * 1.1) / 2, -110]} color="#1b231f" />
-          ))}
-          <Box args={[0.06, 0.06, 172]} position={[s * 15.5, 1.02, -110]} color={LIME} emissive />
-          <Box args={[0.6, 22, 172]} position={[s * 24, 11, -110]} color="#141b17" />
+          <Box args={[0.06, 0.06, 172]} position={[s * 15.5, 0.08, -110]} color={LIME} emissive glow={2} />
+          <Box args={[0.6, 22, 172]} position={[s * 24, 11, -110]} material={panel} />
         </group>
       ))}
     </group>
@@ -521,7 +542,7 @@ function Arena({ mobile }: { mobile: boolean }) {
 }
 
 function BookWorld({ mobile }: { mobile: boolean }) {
-  const face = useMemo(() => new THREE.MeshStandardMaterial({ color: WHITE, emissive: WHITE, emissiveIntensity: 0.12, roughness: 0.35 }), []);
+  const face = useMemo(() => new THREE.MeshStandardMaterial({ color: "#e4e8df", roughness: 0.45 }), []);
   const side = useMemo(() => new THREE.MeshStandardMaterial({ color: "#9cc21a", emissive: LIME, emissiveIntensity: 0.18, roughness: 0.5 }), []);
   return (
     <group>
@@ -548,7 +569,8 @@ function RouteMarkers({ z }: { z: number }) {
 }
 
 function PlayWorld({ mobile, timeRef }: { mobile: boolean; timeRef: React.MutableRefObject<number> }) {
-  const face = useMemo(() => new THREE.MeshStandardMaterial({ color: WHITE, emissive: WHITE, emissiveIntensity: 0.12, roughness: 0.35 }), []);
+  const felt = usePBR("felt_billiards", R_FELT, FELT_PARAMS);
+  const face = useMemo(() => new THREE.MeshStandardMaterial({ color: "#e4e8df", roughness: 0.45 }), []);
   const side = useMemo(() => new THREE.MeshStandardMaterial({ color: "#2a3530", roughness: 0.6 }), []);
   const groups = useRef<(THREE.Group | null)[]>([]);
   useFrame(() => {
@@ -588,7 +610,8 @@ function PlayWorld({ mobile, timeRef }: { mobile: boolean; timeRef: React.Mutabl
           <Hoop position={[s * 13.6, 0, cz]} facing={s > 0 ? -Math.PI / 2 : Math.PI / 2} />
         </group>
       ))}
-      <Ball position={[1.6, 0.3, cz + 1.2]} />
+      <DribbleBall position={[1.6, 0, cz + 1.2]} shadows={!mobile} />
+      <Benches shadows={!mobile} cz={cz} />
       <Ball position={[-9.5, 0.3, cz - 2]} r={0.28} />
 
       <Panel position={[3.8, 6, -91]} rotY={-0.3} w={4.2} h={2.1} draw={drawConfirm} />
@@ -600,9 +623,8 @@ function PlayWorld({ mobile, timeRef }: { mobile: boolean; timeRef: React.Mutabl
       {/* billiards table between BOOK and PLAY */}
       <group position={[-7.5, 0, -70]} rotation={[0, 0.3, 0]}>
         <Box args={[3, 0.8, 1.7]} position={[0, 0.4, 0]} color="#3d2414" />
-        <mesh position={[0, 0.81, 0]}>
+        <mesh position={[0, 0.81, 0]} material={felt}>
           <boxGeometry args={[2.7, 0.04, 1.4]} />
-          <meshStandardMaterial color="#1f6b45" roughness={0.9} />
         </mesh>
         {[[-1.35, -0.7], [0, -0.72], [1.35, -0.7], [-1.35, 0.7], [0, 0.72], [1.35, 0.7]].map(([x, z], i) => (
           <mesh key={i} position={[x, 0.84, z]}>
@@ -703,9 +725,19 @@ function ReplayWorld({ mobile, timeRef }: { mobile: boolean; timeRef: React.Muta
   const textures = useMemo(() => CLIPS.map(([k, l]) => highlightTexture(k, l)), []);
   const screenMat = useRef<THREE.MeshBasicMaterial>(null);
   const head = useRef<THREE.Mesh>(null);
+  // The giant screen plays the ambient arena loop while it's in view.
+  const video = useArenaVideo(() => timeRef.current > 0.55 && timeRef.current < 0.74);
   useFrame(() => {
     const t = timeRef.current;
-    if (screenMat.current) screenMat.current.opacity = 1 - smoothstep(0.66, 0.712, t);
+    const m = screenMat.current;
+    if (m) {
+      m.opacity = 1 - smoothstep(0.66, 0.712, t);
+      const want = video.ready() ? video.texture : textures[0];
+      if (m.map !== want) {
+        m.map = want;
+        m.needsUpdate = true;
+      }
+    }
     if (head.current) head.current.position.z = -128 - smoothstep(0.72, 0.88, t) * 34;
   });
   const frames = (mobile ? CLIPS.slice(0, 4) : CLIPS).map((c, i) => {
@@ -722,10 +754,10 @@ function ReplayWorld({ mobile, timeRef }: { mobile: boolean; timeRef: React.Muta
         <Box args={[GATE.w + 0.6, 0.3, 0.5]} position={[0, -GATE.h / 2 - 0.15, 0]} color="#1b231f" />
         <Box args={[0.3, GATE.h, 0.5]} position={[-GATE.w / 2 - 0.15, 0, 0]} color="#1b231f" />
         <Box args={[0.3, GATE.h, 0.5]} position={[GATE.w / 2 + 0.15, 0, 0]} color="#1b231f" />
-        <Box args={[GATE.w + 0.2, 0.06, 0.06]} position={[0, GATE.h / 2, 0.28]} color={LIME} emissive />
-        <Box args={[GATE.w + 0.2, 0.06, 0.06]} position={[0, -GATE.h / 2, 0.28]} color={LIME} emissive />
-        <Box args={[0.06, GATE.h, 0.06]} position={[-GATE.w / 2, 0, 0.28]} color={LIME} emissive />
-        <Box args={[0.06, GATE.h, 0.06]} position={[GATE.w / 2, 0, 0.28]} color={LIME} emissive />
+        <Box args={[GATE.w + 0.2, 0.06, 0.06]} position={[0, GATE.h / 2, 0.28]} color={LIME} emissive glow={2} />
+        <Box args={[GATE.w + 0.2, 0.06, 0.06]} position={[0, -GATE.h / 2, 0.28]} color={LIME} emissive glow={2} />
+        <Box args={[0.06, GATE.h, 0.06]} position={[-GATE.w / 2, 0, 0.28]} color={LIME} emissive glow={2} />
+        <Box args={[0.06, GATE.h, 0.06]} position={[GATE.w / 2, 0, 0.28]} color={LIME} emissive glow={2} />
         <mesh>
           <planeGeometry args={[GATE.w, GATE.h]} />
           <meshBasicMaterial ref={screenMat} map={textures[0]} transparent toneMapped={false} side={THREE.DoubleSide} />
@@ -774,7 +806,7 @@ function ReplayWorld({ mobile, timeRef }: { mobile: boolean; timeRef: React.Muta
 }
 
 function Convergence({ mobile, timeRef }: { mobile: boolean; timeRef: React.MutableRefObject<number> }) {
-  const face = useMemo(() => new THREE.MeshStandardMaterial({ color: WHITE, emissive: WHITE, emissiveIntensity: 0.25, roughness: 0.3 }), []);
+  const face = useMemo(() => new THREE.MeshStandardMaterial({ color: "#e4e8df", emissive: WHITE, emissiveIntensity: 0.08, roughness: 0.4 }), []);
   const side = useMemo(() => new THREE.MeshStandardMaterial({ color: "#9cc21a", emissive: LIME, emissiveIntensity: 0.25, roughness: 0.5 }), []);
   const markGroup = useRef<THREE.Group>(null);
   const ring = useRef<THREE.MeshBasicMaterial>(null);
@@ -876,9 +908,26 @@ function PlayRoute({ mobile, timeRef }: { mobile: boolean; timeRef: React.Mutabl
   return (
     <instancedMesh ref={mesh} args={[undefined, undefined, dashes.length]} frustumCulled={false}>
       <boxGeometry args={[0.16, 0.02, 0.55]} />
-      <meshBasicMaterial color={LIME} toneMapped={false} />
+      <meshBasicMaterial color={ROUTE_GLOW} toneMapped={false} />
     </instancedMesh>
   );
+}
+
+/** Every lit, solid mesh casts and receives shadows (planes and unlit panels excluded). */
+function ShadowFlags() {
+  const { scene } = useThree();
+  useEffect(() => {
+    scene.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (!m.isMesh || (m as unknown as THREE.InstancedMesh).isInstancedMesh) return;
+      const lit = !(m.material as THREE.Material & { isMeshBasicMaterial?: boolean }).isMeshBasicMaterial;
+      if (!lit) return;
+      const flat = m.geometry.type === "PlaneGeometry" || m.geometry.type === "CircleGeometry" || m.geometry.type === "RingGeometry";
+      m.castShadow = !flat;
+      m.receiveShadow = true;
+    });
+  }, [scene]);
+  return null;
 }
 
 export function World({ mobile }: { mobile: boolean }) {
@@ -887,8 +936,11 @@ export function World({ mobile }: { mobile: boolean }) {
     <>
       <color attach="background" args={[CHAR]} />
       <fog attach="fog" args={[CHAR, 16, 85]} />
-      <hemisphereLight args={["#dfe7e2", "#2a1d12", 0.55]} />
-      <directionalLight position={[10, 20, 10]} intensity={0.5} color="#e8efe9" />
+      <EnvironmentSwitcher />
+      <hemisphereLight args={["#dfe7e2", "#2a1d12", 0.3]} />
+      {mobile ? <directionalLight position={[10, 20, 10]} intensity={0.6} color="#e8efe9" /> : <ShadowRig />}
+      {!mobile && <ShadowFlags />}
+      {!mobile && <PostFX />}
       <CameraRig mobile={mobile} timeRef={timeRef} />
       <Courtside mobile={mobile} />
       <Arena mobile={mobile} />

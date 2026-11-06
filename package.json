@@ -1,0 +1,31 @@
+{
+  "name": "playbook",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Playbook — Book. Play. Replay. Sports booking & highlights website (demo).",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "tsc --noEmit",
+    "test": "node --experimental-strip-types --no-warnings tests/booking.test.ts"
+  },
+  "dependencies": {
+    "@react-three/fiber": "9.8.2",
+    "gsap": "3.13.0",
+    "next": "15.5.29",
+    "react": "19.2.9",
+    "react-dom": "19.2.9",
+    "three": "0.180.0"
+  },
+  "devDependencies": {
+    "@types/node": "22.15.3",
+    "@types/react": "19.2.2",
+    "@types/react-dom": "19.2.2",
+    "@types/three": "0.180.0",
+    "typescript": "5.9.3"
+  },
+  "overrides": {
+    "postcss": "8.5.23"
+  }
+}

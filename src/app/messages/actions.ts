@@ -81,7 +81,8 @@ export async function postAnnouncement(formData: FormData) {
 export async function deleteAnnouncement(formData: FormData) {
   const venueId = str(formData, "venue_id", 60);
   const { user } = await requireVenueRole(venueId, "manager");
-  await q("DELETE FROM venue_announcement WHERE id=$1 AND venue_id=$2", [str(formData, "id", 60), venueId]);
+  const removed = await q("DELETE FROM venue_announcement WHERE id=$1 AND venue_id=$2 RETURNING id", [str(formData, "id", 60), venueId]);
+  if (removed.length === 0) to(`/venue/${venueId}?tab=announcements`, { error: "Announcement not found at this venue." });
   await audit(user.id, "announcement.delete", "venue", venueId);
   revalidatePath(`/venue/${venueId}`);
   to(`/venue/${venueId}?tab=announcements`, { ok: "Announcement removed." });

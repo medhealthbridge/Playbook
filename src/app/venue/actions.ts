@@ -105,7 +105,8 @@ export async function updateCourt(formData: FormData) {
   const rate = pesoToCents(formData, "rate");
   const active = str(formData, "active") === "1";
   if (!Number.isFinite(rate) || rate <= 0) back(path, { error: "Enter a valid hourly rate." });
-  await q("UPDATE resource SET hourly_rate_cents=$1, active=$2, updated_at=now() WHERE id=$3 AND venue_id=$4", [rate, active, id, venueId]);
+  const updated = await q("UPDATE resource SET hourly_rate_cents=$1, active=$2, updated_at=now() WHERE id=$3 AND venue_id=$4 RETURNING id", [rate, active, id, venueId]);
+  if (updated.length === 0) back(path, { error: "Court not found at this venue." });
   await audit(user.id, "resource.update", "resource", id, { rate, active });
   revalidatePath(`/venue/${venueId}`);
   back(path, { ok: "Court updated." });
@@ -267,7 +268,8 @@ export async function removeBlock(formData: FormData) {
   const date = str(formData, "date", 10);
   const id = str(formData, "id", 60);
   const { user } = await requireVenueRole(venueId, "manager");
-  await q("DELETE FROM resource_block b USING resource r WHERE b.id=$1 AND r.id=b.resource_id AND r.venue_id=$2", [id, venueId]);
+  const removed = await q("DELETE FROM resource_block b USING resource r WHERE b.id=$1 AND r.id=b.resource_id AND r.venue_id=$2 RETURNING b.id", [id, venueId]);
+  if (removed.length === 0) back(cal(venueId, date), { error: "Block not found at this venue." });
   await audit(user.id, "block.remove", "venue", venueId, { id });
   revalidatePath(`/venue/${venueId}`);
   back(cal(venueId, date), { ok: "Block removed." });

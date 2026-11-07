@@ -3,10 +3,11 @@ import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { Flash, PortalHeader, peso } from "@/components/portal/Portal";
 import { SPORTS } from "@/content/sports";
-import { formatDate, formatDuration, formatTime } from "@/lib/booking/time";
+import { formatDate, formatDuration, formatRange, formatTime } from "@/lib/booking/time";
 import { priceCents } from "@/lib/booking/engine";
 import { bookingDates, durationsFor, expireHolds, startsFor, venueBySlug, venueResources } from "@/lib/server/bookings";
 import { getSession } from "@/lib/server/session";
+import { upcomingPublicSessions } from "@/lib/server/openplay";
 import { holdBooking } from "../../bookings/actions";
 
 export const dynamic = "force-dynamic";
@@ -21,7 +22,7 @@ export default async function VenuePage({ params, searchParams }: { params: Prom
   const sp = await searchParams;
   const venue = await venueBySlug(slug);
   if (!venue || venue.status !== "active") notFound();
-  const [resources, session] = await Promise.all([venueResources(venue.id), getSession()]);
+  const [resources, session, openPlay] = await Promise.all([venueResources(venue.id), getSession(), upcomingPublicSessions(venue.id)]);
   const sportName = (id: string) => SPORTS.find((s) => s.id === id)?.name ?? id;
   const sports = [...new Set(resources.flatMap((r) => r.sports))];
   const sport = sports.includes(sp.sport ?? "") ? sp.sport! : sports[0];
@@ -97,6 +98,19 @@ export default async function VenuePage({ params, searchParams }: { params: Prom
                 </dl>
                 <p className="hint">You pay {venue.name} directly. Playbook doesn&apos;t hold your money.</p>
               </section>
+              {openPlay.length > 0 && (
+                <section className="app-card">
+                  <h3>Open play</h3>
+                  <ul className="plain-list">
+                    {openPlay.map((o) => (
+                      <li key={o.id}>
+                        <Link href={`/play/${o.code}`}>{o.title}</Link>
+                        <br /><span className="hint">{formatDate(o.date)}, {formatRange(o.start_min, o.end_min)} · {peso(o.fee_cents)} · {o.players}/{o.max_players} joined{o.status === "live" ? " · live now" : ""}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              )}
               <section className="app-card">
                 <h3>About</h3>
                 <p>{venue.description || `${venue.name} in ${venue.area}.`}</p>

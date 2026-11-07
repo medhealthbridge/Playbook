@@ -12,6 +12,8 @@ import { hmToMin } from "@/lib/booking/engine";
 import { blocksOn, venueBookingsOn, venueById as getVenue } from "@/lib/server/bookings";
 import { PLAN_IDS, billingSettings, feesFor, monthRange, planPrices, platformPaymongo, subscriptionFor } from "@/lib/server/billing";
 import { VENUE_PLANS } from "@/content/plans";
+import { venueSessions } from "@/lib/server/openplay";
+import { createOpenPlay } from "../../openplay/actions";
 
 export const metadata: Metadata = { title: "Venue dashboard — Playbook", robots: { index: false } };
 export const dynamic = "force-dynamic";
@@ -33,11 +35,12 @@ export default async function VenueDashboard({ params, searchParams }: { params:
     [id],
   );
   if (!venue) notFound();
-  const tab = ["overview", "calendar", "courts", "staff", "payments", "billing", "settings"].includes(sp.tab ?? "") ? sp.tab! : "overview";
+  const tab = ["overview", "calendar", "openplay", "courts", "staff", "payments", "billing", "settings"].includes(sp.tab ?? "") ? sp.tab! : "overview";
   const canManage = role === "owner" || role === "manager";
   const tabs = [
     { key: "overview", label: "Overview", href: `/venue/${id}` },
     { key: "calendar", label: "Calendar", href: `/venue/${id}?tab=calendar` },
+    { key: "openplay", label: "Open play", href: `/venue/${id}?tab=openplay` },
     { key: "courts", label: "Courts", href: `/venue/${id}?tab=courts` },
     ...(canManage ? [{ key: "staff", label: "Staff", href: `/venue/${id}?tab=staff` }] : []),
     ...(role === "owner" ? [{ key: "payments", label: "Payments", href: `/venue/${id}?tab=payments` }, { key: "billing", label: "Billing", href: `/venue/${id}?tab=billing` }] : []),
@@ -58,6 +61,7 @@ export default async function VenueDashboard({ params, searchParams }: { params:
           <Flash ok={sp.ok} error={sp.error} />
           {tab === "overview" && <Overview venue={venue} />}
           {tab === "calendar" && <Calendar venueId={id} date={/^\d{4}-\d{2}-\d{2}$/.test(sp.date ?? "") ? sp.date! : manilaToday()} canManage={canManage} />}
+          {tab === "openplay" && <OpenPlayTab venueId={id} canManage={canManage} />}
           {tab === "courts" && <Courts venueId={id} canManage={canManage} />}
           {tab === "payments" && role === "owner" && <Payments venueId={id} />}
           {tab === "billing" && role === "owner" && <BillingTab venue={venue} />}
@@ -490,6 +494,70 @@ async function BillingTab({ venue }: { venue: Venue }) {
           </div>
         )}
       </section>
+    </>
+  );
+}
+
+async function OpenPlayTab({ venueId, canManage }: { venueId: string; canManage: boolean }) {
+  const [sessions, courts] = await Promise.all([
+    venueSessions(venueId),
+    q<Court>("SELECT id, name, kind, sports, indoor, hourly_rate_cents, active FROM resource WHERE venue_id=$1 AND active ORDER BY sort, created_at", [venueId]),
+  ]);
+  const today = manilaToday();
+  return (
+    <>
+      <section className="app-card">
+        <h2>Open play sessions</h2>
+        <p className="hint">Players join with a QR code, the system rotates four players onto each free court, and a TV board shows who&apos;s up next.</p>
+        {sessions.length === 0 ? <p className="hint">No sessions yet.</p> : (
+          <div className="table-wrap">
+            <table className="data-table">
+              <thead><tr><th scope="col">Session</th><th scope="col">When</th><th scope="col">Courts</th><th scope="col">Players</th><th scope="col">Status</th></tr></thead>
+              <tbody>
+                {sessions.map((s) => (
+                  <tr key={s.id}>
+                    <td><Link href={`/venue/${venueId}/openplay/${s.id}`}><strong>{s.title}</strong></Link><br /><span className="hint">Code {s.code}</span></td>
+                    <td>{formatDate(s.date)}<br /><span className="hint">{formatRange(s.start_min, s.end_min)}</span></td>
+                    <td>{s.court_ids.length}</td>
+                    <td>{s.players} / {s.max_players}</td>
+                    <td><span className={`badge ${s.status === "live" ? "badge-ok" : s.status === "scheduled" ? "badge-warn" : "badge-muted"}`}>{s.status}</span></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+      {canManage && (
+        <form action={createOpenPlay} className="app-card form-grid" style={{ maxWidth: 760 }}>
+          <h3>New open play session</h3>
+          <input type="hidden" name="venue_id" value={venueId} />
+          <div className="field"><label htmlFor="op-title">Title</label><input id="op-title" name="title" className="input" defaultValue="Open play doubles" /></div>
+          <div className="field-row">
+            <div className="field"><label htmlFor="op-date">Date</label><input id="op-date" name="date" type="date" className="input" min={today} defaultValue={today} required /></div>
+            <div className="field"><label htmlFor="op-fee">Fee per player (₱)</label><input id="op-fee" name="fee" inputMode="decimal" className="input" defaultValue="250" /></div>
+          </div>
+          <div className="field-row">
+            <div className="field"><label htmlFor="op-s">Starts</label><input id="op-s" name="start" type="time" step={900} className="input" defaultValue="18:00" required /></div>
+            <div className="field"><label htmlFor="op-e">Ends</label><input id="op-e" name="end" type="time" step={900} className="input" defaultValue="21:00" required /></div>
+          </div>
+          <fieldset className="field">
+            <legend className="label">Courts</legend>
+            <div className="chip-row">{courts.map((c) => <label key={c.id} className="check"><input type="checkbox" name="courts" value={c.id} defaultChecked={c.sports.includes("pickleball")} /> {c.name}</label>)}</div>
+          </fieldset>
+          <div className="field-row">
+            <div className="field"><label htmlFor="op-max">Max players</label><input id="op-max" name="max_players" type="number" min={4} max={200} className="input" defaultValue={24} /></div>
+            <div className="field"><label htmlFor="op-mode">Rotation</label>
+              <select id="op-mode" name="mode" className="select" defaultValue="all_off">
+                <option value="all_off">All four off after each game</option>
+                <option value="winners_stay">Winners stay (max 2 games)</option>
+              </select>
+            </div>
+          </div>
+          <label className="check"><input type="checkbox" name="skill_match" value="1" /> Match players by skill level when possible</label>
+          <button className="btn" type="submit">Create session</button>
+        </form>
+      )}
     </>
   );
 }

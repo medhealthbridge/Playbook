@@ -16,6 +16,7 @@ export function Nav() {
   const path = usePathname();
   const onHome = path === "/";
 
+  const hidden = path.startsWith("/board/");
   useEffect(() => {
     const onScroll = () => setSolid(window.scrollY > 40 || !onHome);
     onScroll();
@@ -23,6 +24,7 @@ export function Nav() {
     return () => window.removeEventListener("scroll", onScroll);
   }, [onHome]);
 
+  if (hidden) return null; // full-screen TV board
   return (
     <header className={`nav ${solid ? "is-solid" : ""}`}>
       <div className="nav-inner">

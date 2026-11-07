@@ -64,3 +64,20 @@ import { verifyPaymongoSignature } from "../src/lib/payments/paymongoSignature.t
   test("old timestamps are rejected", () => assert.equal(verifyPaymongoSignature(`t=${t},te=${sig},li=`, body, secret, false, (t + 3600) * 1000), false));
   console.log(`${passed} checks passed in total.`);
 }
+
+// Open play queue
+import { afterGame, nextGroup, publicName, teams } from "../src/lib/openplay/queue.ts";
+{
+  const P = (id: string, skill: "beginner" | "intermediate" | "advanced", t: number) => ({ id, skill, queueAt: t });
+  const q = [P("a", "beginner", 1), P("b", "advanced", 2), P("c", "beginner", 3), P("d", "advanced", 4), P("e", "beginner", 5), P("f", "beginner", 6)];
+  test("next group takes the four longest-waiting players", () => assert.deepEqual(nextGroup(q)!.map((p) => p.id), ["a", "b", "c", "d"]));
+  test("no group with fewer than four waiting", () => assert.equal(nextGroup(q.slice(0, 3)), null));
+  test("skill matching groups the head player's level", () => assert.deepEqual(nextGroup(q, 4, true)!.map((p) => p.id), ["a", "c", "e", "f"]));
+  test("skill matching falls back to earliest others", () => assert.deepEqual(nextGroup(q.slice(0, 5), 4, true)!.map((p) => p.id), ["a", "b", "c", "e"]));
+  test("teams spread arrival order", () => assert.deepEqual(teams(q.slice(0, 4)), [["a", "d"], ["b", "c"]]));
+  test("all-off sends everyone back", () => assert.deepEqual(afterGame("all_off", ["a", "d"], ["b", "c"], "a", 1), { toQueue: ["a", "d", "b", "c"], stay: [] }));
+  test("winners stay, losers queue", () => assert.deepEqual(afterGame("winners_stay", ["a", "d"], ["b", "c"], "b", 1), { toQueue: ["a", "d"], stay: ["b", "c"] }));
+  test("winners rotate off at the streak cap", () => assert.deepEqual(afterGame("winners_stay", ["a", "d"], ["b", "c"], "b", 2), { toQueue: ["a", "d", "b", "c"], stay: [] }));
+  test("public names hide surnames", () => { assert.equal(publicName("Juan Dela Cruz"), "Juan C."); assert.equal(publicName("Migs"), "Migs"); });
+  console.log(`${passed} checks passed in total.`);
+}

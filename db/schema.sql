@@ -210,3 +210,56 @@ CREATE INDEX IF NOT EXISTS invoice_status_idx ON invoice (status, due_date);
 
 -- When a plan was chosen (trial venues pick a plan before the trial ends).
 ALTER TABLE venue ADD COLUMN IF NOT EXISTS plan_chosen_at timestamptz;
+
+-- ---------------------------------------------------------------- Open play (pickleball queue)
+CREATE TABLE IF NOT EXISTS open_play_session (
+  id             text PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  venue_id       text NOT NULL REFERENCES venue(id) ON DELETE CASCADE,
+  code           text NOT NULL UNIQUE,
+  title          text NOT NULL,
+  sport          text NOT NULL DEFAULT 'pickleball',
+  date           date NOT NULL,
+  start_min      int  NOT NULL,
+  end_min        int  NOT NULL CHECK (end_min > start_min),
+  court_ids      text[] NOT NULL,
+  fee_cents      int  NOT NULL DEFAULT 0,
+  max_players    int  NOT NULL DEFAULT 24,
+  mode           text NOT NULL DEFAULT 'all_off' CHECK (mode IN ('all_off', 'winners_stay')),
+  skill_match    boolean NOT NULL DEFAULT false,
+  status         text NOT NULL DEFAULT 'scheduled' CHECK (status IN ('scheduled', 'live', 'ended', 'cancelled')),
+  created_by     text REFERENCES "user"(id) ON DELETE SET NULL,
+  created_at     timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS open_play_session_venue_idx ON open_play_session (venue_id, date);
+
+CREATE TABLE IF NOT EXISTS open_play_player (
+  id            text PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  session_id    text NOT NULL REFERENCES open_play_session(id) ON DELETE CASCADE,
+  user_id       text REFERENCES "user"(id) ON DELETE SET NULL,
+  name          text NOT NULL,
+  skill         text NOT NULL DEFAULT 'intermediate' CHECK (skill IN ('beginner', 'intermediate', 'advanced')),
+  status        text NOT NULL DEFAULT 'registered' CHECK (status IN ('registered', 'waiting', 'playing', 'resting', 'left')),
+  queue_at      timestamptz,
+  games_played  int NOT NULL DEFAULT 0,
+  win_streak    int NOT NULL DEFAULT 0,
+  paid_cents    int NOT NULL DEFAULT 0,
+  checked_in_at timestamptz,
+  created_at    timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (session_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS open_play_player_queue_idx ON open_play_player (session_id, status, queue_at);
+
+CREATE TABLE IF NOT EXISTS open_play_game (
+  id          text PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  session_id  text NOT NULL REFERENCES open_play_session(id) ON DELETE CASCADE,
+  resource_id text NOT NULL REFERENCES resource(id) ON DELETE CASCADE,
+  team_a      text[] NOT NULL,
+  team_b      text[] NOT NULL,
+  winner      text CHECK (winner IN ('a', 'b')),
+  status      text NOT NULL DEFAULT 'playing' CHECK (status IN ('playing', 'done')),
+  started_at  timestamptz NOT NULL DEFAULT now(),
+  ended_at    timestamptz
+);
+CREATE UNIQUE INDEX IF NOT EXISTS open_play_one_game_per_court ON open_play_game (resource_id) WHERE status = 'playing';
+
+ALTER TABLE resource_block ADD COLUMN IF NOT EXISTS open_play_session_id text REFERENCES open_play_session(id) ON DELETE CASCADE;

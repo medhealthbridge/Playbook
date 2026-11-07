@@ -8,7 +8,10 @@ import { publicName } from "@/lib/openplay/queue";
 import { q1 } from "@/lib/server/db";
 import { liveGames, sessionByCode, sessionPlayers } from "@/lib/server/openplay";
 import { getSession } from "@/lib/server/session";
-import { joinOpenPlay, playerSelfStatus } from "../../openplay/actions";
+import { joinOpenPlay, payOpenPlayFee, playerSelfStatus } from "../../openplay/actions";
+import { decrypt } from "@/lib/server/crypto";
+import { checkoutPayments } from "@/lib/server/paymongo";
+import { markOpenPlayPaid } from "@/lib/server/openplay";
 
 export const metadata: Metadata = { title: "Join open play — Playbook", robots: { index: false } };
 export const dynamic = "force-dynamic";
@@ -24,7 +27,22 @@ export default async function PlayPage({ params, searchParams }: { params: Promi
     sessionPlayers(s.id),
     liveGames(s.id),
   ]);
-  const me = auth ? players.find((p) => p.user_id === auth.user.id && p.status !== "left") : undefined;
+  let me = auth ? players.find((p) => p.user_id === auth.user.id && p.status !== "left") : undefined;
+  const venuePay = await q1<{ secret: string | null }>("SELECT paymongo_secret_enc AS secret FROM venue WHERE id=$1", [s.venue_id]);
+  const extra = me ? await q1<{ checkout_session_id: string | null; paid_online: boolean }>("SELECT checkout_session_id, paid_online FROM open_play_player WHERE id=$1", [me.id]) : null;
+  let paidNote: string | null = null;
+  if (sp.paid && me && extra?.checkout_session_id && !extra.paid_online && venuePay?.secret) {
+    try {
+      const p = await checkoutPayments(decrypt(venuePay.secret), extra.checkout_session_id);
+      if (p.paidCents > 0 && (await markOpenPlayPaid(me.id, p.paidCents, p.paymentId))) {
+        paidNote = "Fee paid. Just check in at the front desk when you arrive.";
+        me = { ...me, paid_cents: me.paid_cents + p.paidCents };
+      }
+    } catch (e) {
+      console.error("open play payment check failed", e);
+    }
+  }
+  const paidOnline = !!extra?.paid_online || !!paidNote;
   const waiting = players.filter((p) => p.status === "waiting");
   const pos = me ? waiting.findIndex((p) => p.id === me.id) + 1 : 0;
   const myGame = me ? games.find((g) => g.team_a.includes(me.id) || g.team_b.includes(me.id)) : undefined;
@@ -44,7 +62,7 @@ export default async function PlayPage({ params, searchParams }: { params: Promi
       <PortalHeader eyebrow={`${venue?.name ?? ""} · ${venue?.area ?? ""}`} title={s.title} />
       <div className="app-body">
         <div className="container app-stack" style={{ maxWidth: 640 }}>
-          <Flash ok={sp.ok} error={sp.error} />
+          <Flash ok={paidNote ?? sp.ok} error={sp.error} />
           <section className="app-card">
             <dl className="kv">
               <dt>When</dt><dd>{formatDate(s.date)}, {formatRange(s.start_min, s.end_min)}</dd>
@@ -76,10 +94,13 @@ export default async function PlayPage({ params, searchParams }: { params: Promi
             </form>
           ) : (
             <section className={`app-card op-me op-me-${me.status}`}>
-              {me.status === "registered" && (<><h2>You&apos;re registered</h2><p>Show this screen at the front desk to check in{s.fee_cents ? ` and pay ${peso(s.fee_cents)}` : ""}. Then you&apos;re in the queue.</p><p className="op-big">{me.name}</p></>)}
+              {me.status === "registered" && (<><h2>You&apos;re registered</h2><p>Show this screen at the front desk to check in{s.fee_cents && !paidOnline ? ` and pay ${peso(s.fee_cents)}` : ""}. Then you&apos;re in the queue.</p><p className="op-big">{me.name}</p></>)}
               {me.status === "waiting" && (<><h2>You&apos;re in the queue</h2><p className="op-big">#{pos}</p><p>{pos <= 4 && freeCourts > 0 ? "You're up next — head to the courts." : pos <= 4 ? "You're in the next group. Stay close to the courts." : `${pos - 1} players ahead of you.`}</p></>)}
               {me.status === "playing" && myGame && (<><h2>You&apos;re on {court?.name}</h2><p className="op-big">{court?.name}</p><p>With {mates.join(", ") || "your partner"} · vs {opps.join(" & ")}</p></>)}
               {me.status === "resting" && (<><h2>You&apos;re resting</h2><p>Jump back in whenever you&apos;re ready. You&apos;ll go to the end of the queue.</p></>)}
+              {s.fee_cents > 0 && (paidOnline ? <p><span className="badge badge-ok">Fee paid online</span></p> : venuePay?.secret && (
+                <form action={payOpenPlayFee}><input type="hidden" name="code" value={s.code} /><button className="btn btn-sm" type="submit">Pay {peso(s.fee_cents)} now · GCash, Maya, card</button></form>
+              ))}
               <p className="hint">Games played: {me.games_played}</p>
               <div className="chip-row">
                 {me.status === "waiting" && status("resting", "Take a break")}

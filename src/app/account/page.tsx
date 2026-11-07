@@ -20,6 +20,19 @@ export default async function AccountPage({ searchParams }: { searchParams: Prom
       [user.id],
     ),
   ]);
+  const [feed, replies] = await Promise.all([
+    q<{ id: string; title: string; body: string; created_at: string; venue: string; slug: string }>(
+      `SELECT a.id, a.title, a.body, a.created_at, v.name AS venue, v.slug FROM venue_announcement a JOIN venue_follower f ON f.venue_id=a.venue_id AND f.user_id=$1
+         JOIN venue v ON v.id=a.venue_id ORDER BY a.created_at DESC LIMIT 8`,
+      [user.id],
+    ),
+    q<{ booking_id: string; ref: string; venue: string; body: string; created_at: string }>(
+      `SELECT * FROM (SELECT DISTINCT ON (m.booking_id) m.booking_id, b.ref, v.name AS venue, m.body, m.created_at, m.author_side
+         FROM booking_message m JOIN booking b ON b.id=m.booking_id JOIN venue v ON v.id=b.venue_id WHERE b.user_id=$1 ORDER BY m.booking_id, m.created_at DESC) t
+        WHERE t.author_side='venue' ORDER BY t.created_at DESC LIMIT 5`,
+      [user.id],
+    ),
+  ]);
   const admin = isPlatformAdmin(user);
   const hm = (m: number) => `${String(Math.floor(m / 60) % 12 || 12)}:${String(m % 60).padStart(2, "0")} ${m < 720 ? "AM" : "PM"}`;
 
@@ -64,6 +77,28 @@ export default async function AccountPage({ searchParams }: { searchParams: Prom
               )}
             </section>
             <aside className="app-stack">
+              {replies.length > 0 && (
+                <section className="app-card">
+                  <h3>Replies from venues</h3>
+                  <ul className="plain-list">
+                    {replies.map((r) => (
+                      <li key={r.booking_id}><Link href={`/bookings/${r.booking_id}#messages`}>{r.venue} · {r.ref}</Link><br /><span className="hint">{r.body.slice(0, 100)}</span></li>
+                    ))}
+                  </ul>
+                </section>
+              )}
+              {feed.length > 0 && (
+                <section className="app-card">
+                  <h3>From venues you follow</h3>
+                  {feed.map((n) => (
+                    <article key={n.id} className="news-item">
+                      <strong>{n.title}</strong>
+                      <p>{n.body.length > 160 ? `${n.body.slice(0, 160)}…` : n.body}</p>
+                      <span className="hint"><Link href={`/venues/${n.slug}`}>{n.venue}</Link></span>
+                    </article>
+                  ))}
+                </section>
+              )}
               <section className="app-card" aria-labelledby="pf">
                 <h3 id="pf">Profile</h3>
                 <dl className="kv">

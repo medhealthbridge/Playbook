@@ -372,3 +372,82 @@ export async function payInvoice(formData: FormData) {
   }
   redirect(url!);
 }
+
+// ---------------------------------------------------------------- Recurring bookings
+export async function createSeries(formData: FormData) {
+  const venueId = str(formData, "venue_id", 60);
+  const { user } = await requireVenueRole(venueId, "manager");
+  const path = `/venue/${venueId}?tab=recurring`;
+  const resourceId = str(formData, "resource_id", 60);
+  const first = str(formData, "first_date", 10);
+  const start = hm(str(formData, "start", 5));
+  const dur = int(formData, "duration", 60);
+  const weeks = int(formData, "weeks", 8);
+  const name = str(formData, "customer_name", 80);
+  const phone = str(formData, "customer_phone", 30);
+  const email = str(formData, "customer_email", 120);
+  const notes = str(formData, "notes", 200);
+  const r = (await venueResources(venueId)).find((x) => x.id === resourceId);
+  const v = await venueById(venueId);
+  if (!r || !v) back(path, { error: "Choose a court." });
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(first) || !Number.isFinite(start) || dur < 15 || dur > 600) back(path, { error: "Check the start date, time and duration." });
+  if (weeks < 1 || weeks > 52) back(path, { error: "Weeks must be 1–52." });
+  if (name.length < 2) back(path, { error: "Enter who the booking is for (team or person)." });
+  const [oh, om] = v!.open_time.split(":").map(Number);
+  const [ch, cm] = v!.close_time.split(":").map(Number);
+  if (start < oh * 60 + om || start + dur > ch * 60 + cm) back(path, { error: "That time is outside opening hours." });
+  const priceInput = pesoToCents(formData, "price");
+  const price = Number.isFinite(priceInput) && priceInput > 0 ? priceInput : priceCents(r!.hourly_rate_cents, dur);
+  const weekday = new Date(`${first}T12:00:00Z`).getUTCDay();
+  const series = await q1<{ id: string }>(
+    `INSERT INTO booking_series (venue_id, resource_id, customer_name, customer_phone, customer_email, weekday, start_min, end_min, first_date, weeks, price_cents, notes, created_by)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id`,
+    [venueId, r!.id, name, phone || null, email || null, weekday, start, start + dur, first, weeks, price, notes || null, user.id],
+  );
+  const made: string[] = [];
+  const skipped: string[] = [];
+  for (let i = 0; i < weeks; i++) {
+    const [y, m, d] = first.split("-").map(Number);
+    const dt = new Date(Date.UTC(y, m - 1, d + i * 7));
+    const date = dt.toISOString().slice(0, 10);
+    const blocked = await q1<{ n: number }>("SELECT count(*)::int AS n FROM resource_block WHERE resource_id=$1 AND date=$2 AND start_min < $4 AND end_min > $3", [r!.id, date, start, start + dur]);
+    if (blocked!.n > 0) {
+      skipped.push(date);
+      continue;
+    }
+    try {
+      await q(
+        `INSERT INTO booking (ref, venue_id, resource_id, customer_name, customer_phone, customer_email, sport, date, start_min, end_min, status, source,
+                              price_cents, deposit_cents, pay_method, confirmed_at, series_id, notes, created_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'confirmed','staff',$11,0,'at_venue',now(),$12,$13,$14)`,
+        [makeRef(), venueId, r!.id, name, phone || null, email || null, r!.sports[0], date, start, start + dur, price, series!.id, notes || null, user.id],
+      );
+      made.push(date);
+    } catch (e) {
+      if ((e as { code?: string }).code === "23P01" || (e as { code?: string }).code === "23505") skipped.push(date);
+      else throw e;
+    }
+  }
+  if (made.length === 0) await q("DELETE FROM booking_series WHERE id=$1", [series!.id]);
+  else await audit(user.id, "series.create", "booking_series", series!.id, { weeks, made: made.length, skipped });
+  revalidatePath(`/venue/${venueId}`);
+  back(path, made.length
+    ? { ok: `${made.length} weekly booking${made.length > 1 ? "s" : ""} created for ${name}.${skipped.length ? ` Skipped (already booked or blocked): ${skipped.join(", ")}.` : ""}` }
+    : { error: `No dates were free. Skipped: ${skipped.join(", ")}.` });
+}
+
+export async function cancelSeries(formData: FormData) {
+  const venueId = str(formData, "venue_id", 60);
+  const id = str(formData, "id", 60);
+  const { user } = await requireVenueRole(venueId, "manager");
+  const r = await q1<{ n: number }>(
+    `WITH c AS (UPDATE booking SET status='cancelled', cancelled_at=now(), cancel_reason='Recurring booking cancelled', updated_at=now()
+                 WHERE series_id=$1 AND venue_id=$2 AND status IN ('held','confirmed') AND date >= (now() AT TIME ZONE 'Asia/Manila')::date RETURNING id)
+     SELECT count(*)::int AS n FROM c`,
+    [id, venueId],
+  );
+  await q("UPDATE booking_series SET status='cancelled' WHERE id=$1 AND venue_id=$2", [id, venueId]);
+  await audit(user.id, "series.cancel", "booking_series", id, { cancelled: r?.n ?? 0 });
+  revalidatePath(`/venue/${venueId}`);
+  back(`/venue/${venueId}?tab=recurring`, { ok: `Recurring booking cancelled (${r?.n ?? 0} upcoming dates freed).` });
+}

@@ -1,6 +1,7 @@
 import "server-only";
 import { addDays } from "@/lib/booking/time";
 import { audit, q, q1 } from "./db";
+import { actionEmail, sendEmail } from "./email";
 
 export type PlanId = "manage" | "capture" | "club";
 export const PLAN_IDS: PlanId[] = ["manage", "capture", "club"];
@@ -49,7 +50,7 @@ export async function feesFor(venueId: string, start: string, end: string) {
 }
 
 /** Create invoices for every billable venue for a month. Idempotent per venue+month. */
-export async function generateInvoices(month: string, actorId: string) {
+export async function generateInvoices(month: string, actorId: string | null) {
   const { start, end } = monthRange(month);
   const [prices, billing] = await Promise.all([planPrices(), billingSettings()]);
   const venues = await q<{ id: string; plan: string; trial_ends_at: string | null; created_at: string }>(
@@ -72,8 +73,10 @@ export async function generateInvoices(month: string, actorId: string) {
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) ON CONFLICT (venue_id, period_start) DO NOTHING RETURNING id`,
       [number, v.id, start, end, v.plan, sub, n, fees, total, addDays(end, 1 + (billing.due_days || 7)), actorId],
     );
-    if (row) created++;
-    else skipped++;
+    if (row) {
+      created++;
+      await emailInvoice(row.id).catch((e) => console.error("invoice email failed", e));
+    } else skipped++;
   }
   await audit(actorId, "invoices.generate", "platform", null, { month, created, skipped });
   return { created, skipped };
@@ -86,4 +89,20 @@ export async function markInvoicePaid(id: string, via: string, actorId: string |
   );
   if (r) await audit(actorId, "invoice.paid", "invoice", id, { via });
   return !!r;
+}
+
+/** Email the venue owner(s) that an invoice is ready. */
+export async function emailInvoice(invoiceId: string) {
+  const inv = await q1<{ number: string; total_cents: number; due: string; venue_id: string; venue: string }>(
+    "SELECT i.number, i.total_cents, to_char(i.due_date,'Mon DD, YYYY') AS due, v.id AS venue_id, v.name AS venue FROM invoice i JOIN venue v ON v.id=i.venue_id WHERE i.id=$1",
+    [invoiceId],
+  );
+  if (!inv) return;
+  const owners = await q<{ email: string }>(`SELECT u.email FROM venue_member m JOIN "user" u ON u.id=m.user_id WHERE m.venue_id=$1 AND m.role='owner'`, [inv.venue_id]);
+  const base = process.env.BETTER_AUTH_URL || "https://playbook.databridgesol.space";
+  const amount = `₱${(inv.total_cents / 100).toLocaleString("en-PH")}`;
+  for (const o of owners) {
+    const m = actionEmail(`Invoice ${inv.number}`, `Your Playbook invoice for ${inv.venue} is ready: ${amount}, due ${inv.due}.`, "View and pay invoice", `${base}/venue/${inv.venue_id}/invoice/${invoiceId}`);
+    await sendEmail({ to: o.email, subject: `Playbook invoice ${inv.number} · ${amount}`, ...m });
+  }
 }

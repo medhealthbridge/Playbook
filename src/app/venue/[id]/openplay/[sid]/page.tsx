@@ -136,10 +136,10 @@ export default async function OpenPlayControl({ params, searchParams }: { params
                   <ul className="op-queue">
                     {registered.map((p) => (
                       <li key={p.id}>
-                        <span className="op-name">{p.name}<span className="hint"> · {SKILL[p.skill]}</span></span>
+                        <span className="op-name">{p.name}<span className="hint"> · {SKILL[p.skill]}</span>{p.paid_cents >= s.fee_cents && s.fee_cents > 0 && <> <span className="badge badge-ok">paid online</span></>}</span>
                         <form action={staffCheckIn} className="inline-form">
                           {hidden({ player_id: p.id })}
-                          <input className="input" name="paid" inputMode="decimal" defaultValue={s.fee_cents / 100} aria-label={`Paid by ${p.name}`} style={{ maxWidth: 90 }} />
+                          <input className="input" name="paid" inputMode="decimal" defaultValue={p.paid_cents >= s.fee_cents ? 0 : (s.fee_cents - p.paid_cents) / 100} aria-label={`Collected from ${p.name}`} style={{ maxWidth: 90 }} />
                           <button className="btn btn-xs" type="submit">Check in</button>
                         </form>
                       </li>

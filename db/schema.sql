@@ -263,3 +263,59 @@ CREATE TABLE IF NOT EXISTS open_play_game (
 CREATE UNIQUE INDEX IF NOT EXISTS open_play_one_game_per_court ON open_play_game (resource_id) WHERE status = 'playing';
 
 ALTER TABLE resource_block ADD COLUMN IF NOT EXISTS open_play_session_id text REFERENCES open_play_session(id) ON DELETE CASCADE;
+
+-- ---------------------------------------------------------------- Open play online fees
+ALTER TABLE open_play_player ADD COLUMN IF NOT EXISTS checkout_session_id text;
+ALTER TABLE open_play_player ADD COLUMN IF NOT EXISTS payment_id text;
+ALTER TABLE open_play_player ADD COLUMN IF NOT EXISTS paid_online boolean NOT NULL DEFAULT false;
+
+-- ---------------------------------------------------------------- Recurring bookings
+CREATE TABLE IF NOT EXISTS booking_series (
+  id             text PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  venue_id       text NOT NULL REFERENCES venue(id) ON DELETE CASCADE,
+  resource_id    text NOT NULL REFERENCES resource(id) ON DELETE CASCADE,
+  customer_name  text NOT NULL,
+  customer_phone text,
+  customer_email text,
+  weekday        int  NOT NULL CHECK (weekday BETWEEN 0 AND 6),
+  start_min      int  NOT NULL,
+  end_min        int  NOT NULL,
+  first_date     date NOT NULL,
+  weeks          int  NOT NULL CHECK (weeks BETWEEN 1 AND 52),
+  price_cents    int  NOT NULL,
+  notes          text,
+  status         text NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'cancelled')),
+  created_by     text REFERENCES "user"(id) ON DELETE SET NULL,
+  created_at     timestamptz NOT NULL DEFAULT now()
+);
+ALTER TABLE booking ADD COLUMN IF NOT EXISTS series_id text REFERENCES booking_series(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS booking_series_idx ON booking (series_id);
+
+-- ---------------------------------------------------------------- Messaging
+CREATE TABLE IF NOT EXISTS booking_message (
+  id          bigserial PRIMARY KEY,
+  booking_id  text NOT NULL REFERENCES booking(id) ON DELETE CASCADE,
+  author_id   text REFERENCES "user"(id) ON DELETE SET NULL,
+  author_side text NOT NULL CHECK (author_side IN ('player', 'venue')),
+  body        text NOT NULL CHECK (length(body) BETWEEN 1 AND 2000),
+  created_at  timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS booking_message_idx ON booking_message (booking_id, created_at);
+
+CREATE TABLE IF NOT EXISTS venue_follower (
+  venue_id   text NOT NULL REFERENCES venue(id) ON DELETE CASCADE,
+  user_id    text NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
+  email_ok   boolean NOT NULL DEFAULT true,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (venue_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS venue_announcement (
+  id         text PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  venue_id   text NOT NULL REFERENCES venue(id) ON DELETE CASCADE,
+  title      text NOT NULL,
+  body       text NOT NULL,
+  created_by text REFERENCES "user"(id) ON DELETE SET NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS venue_announcement_idx ON venue_announcement (venue_id, created_at DESC);

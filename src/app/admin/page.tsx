@@ -279,7 +279,7 @@ async function Billing({ month, status }: { month?: string; status?: string }) {
         <label className="hint" htmlFor="month">Month</label>
         <input id="month" name="month" type="month" className="input" defaultValue={m} max={today.slice(0, 7)} />
         <button className="btn btn-sm" type="submit">Create invoices</button>
-        <p className="hint" style={{ flexBasis: "100%" }}>Bills each live venue for that month: its plan price (none while on trial) plus Playbook booking fees. Venues with nothing to bill are skipped; running it again never duplicates.</p>
+        <p className="hint" style={{ flexBasis: "100%" }}>This runs automatically on the 1st of every month for the previous month (owners are emailed). Use the button to run it now. Bills each live venue for that month: its plan price (none while on trial) plus Playbook booking fees. Venues with nothing to bill are skipped; running it again never duplicates.</p>
       </form>
       <section className="app-card">
         <div className="inline-form">

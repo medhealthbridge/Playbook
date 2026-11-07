@@ -8,6 +8,8 @@ import {
 } from "@/lib/server/openplay";
 import { getSession, requireVenueRole } from "@/lib/server/session";
 import type { Skill } from "@/lib/openplay/queue";
+import { decrypt } from "@/lib/server/crypto";
+import { createCheckout } from "@/lib/server/paymongo";
 
 const SKILLS: Skill[] = ["beginner", "intermediate", "advanced"];
 const to = (path: string, m: { ok?: string; error?: string }) =>
@@ -142,4 +144,36 @@ export async function playerSelfStatus(formData: FormData) {
   await setPlayerStatus(s!.id, me!.id, st);
   revalidatePath(path);
   redirect(path);
+}
+
+export async function payOpenPlayFee(formData: FormData) {
+  const code = str(formData, "code", 10).toUpperCase();
+  const path = `/play/${code}`;
+  const auth = await getSession();
+  if (!auth) redirect(`/login?next=${encodeURIComponent(path)}`);
+  const s = await sessionByCode(code);
+  if (!s) redirect("/venues");
+  const me = await q1<{ id: string; name: string; paid_online: boolean; email: string }>(
+    `SELECT p.id, p.name, p.paid_online, u.email FROM open_play_player p JOIN "user" u ON u.id=p.user_id WHERE p.session_id=$1 AND p.user_id=$2 AND p.status <> 'left'`,
+    [s!.id, auth!.user.id],
+  );
+  if (!me) to(path, { error: "Join the session first." });
+  if (me!.paid_online || s!.fee_cents <= 0) to(path, { error: "Nothing to pay." });
+  const v = await q1<{ name: string; secret: string | null }>("SELECT name, paymongo_secret_enc AS secret FROM venue WHERE id=$1", [s!.venue_id]);
+  if (!v?.secret) to(path, { error: "This venue takes payment at the front desk." });
+  const base = process.env.BETTER_AUTH_URL || "https://playbook.databridgesol.space";
+  let url = "";
+  try {
+    const c = await createCheckout(decrypt(v!.secret!), {
+      amountCents: s!.fee_cents, name: `Open play · ${s!.title}`, description: `${v!.name} · ${s!.date}`, reference: `OP-${s!.code}`,
+      successUrl: `${base}${path}?paid=1`, cancelUrl: `${base}${path}`, customer: { name: me!.name, email: me!.email },
+      metadata: { open_play_player_id: me!.id, venue_id: s!.venue_id },
+    });
+    await q1("UPDATE open_play_player SET checkout_session_id=$2 WHERE id=$1", [me!.id, c.id]);
+    url = c.url;
+  } catch (e) {
+    console.error("open play checkout failed", e);
+    to(path, { error: "Couldn't start the payment. Please try again." });
+  }
+  redirect(url);
 }

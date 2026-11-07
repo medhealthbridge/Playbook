@@ -172,3 +172,12 @@ export async function setSessionStatus(sessionId: string, status: "live" | "ende
   });
   await audit(actorId, `openplay.${status}`, "open_play_session", sessionId);
 }
+
+/** Record an online fee payment once (idempotent). */
+export async function markOpenPlayPaid(playerId: string, cents: number, paymentId: string | null) {
+  const r = await q1<{ id: string }>(
+    "UPDATE open_play_player SET paid_cents = paid_cents + $2, paid_online = true, payment_id = $3 WHERE id=$1 AND NOT paid_online RETURNING id",
+    [playerId, cents, paymentId],
+  );
+  return !!r;
+}

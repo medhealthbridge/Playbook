@@ -6,7 +6,7 @@ import { Flash, PortalHeader, VenueStatus, peso, when } from "@/components/porta
 import { SPORTS } from "@/content/sports";
 import { q, q1 } from "@/lib/server/db";
 import { requireVenueRole } from "@/lib/server/session";
-import { choosePlan, addBlock, addCourt, addMember, checkIn, connectPaymongo, disconnectPaymongo, markNoShow, removeBlock, removeMember, setPayAtVenue, updateCourt, updateVenue, walkIn } from "../actions";
+import { cancelSeries, createSeries, choosePlan, addBlock, addCourt, addMember, checkIn, connectPaymongo, disconnectPaymongo, markNoShow, removeBlock, removeMember, setPayAtVenue, updateCourt, updateVenue, walkIn } from "../actions";
 import { addDays, formatDate, formatRange, formatTime, manilaToday } from "@/lib/booking/time";
 import { hmToMin } from "@/lib/booking/engine";
 import { blocksOn, venueBookingsOn, venueById as getVenue } from "@/lib/server/bookings";
@@ -14,6 +14,7 @@ import { PLAN_IDS, billingSettings, feesFor, monthRange, planPrices, platformPay
 import { VENUE_PLANS } from "@/content/plans";
 import { venueSessions } from "@/lib/server/openplay";
 import { createOpenPlay } from "../../openplay/actions";
+import { deleteAnnouncement, postAnnouncement } from "../../messages/actions";
 
 export const metadata: Metadata = { title: "Venue dashboard — Playbook", robots: { index: false } };
 export const dynamic = "force-dynamic";
@@ -35,12 +36,14 @@ export default async function VenueDashboard({ params, searchParams }: { params:
     [id],
   );
   if (!venue) notFound();
-  const tab = ["overview", "calendar", "openplay", "courts", "staff", "payments", "billing", "settings"].includes(sp.tab ?? "") ? sp.tab! : "overview";
+  const tab = ["overview", "calendar", "recurring", "openplay", "announcements", "courts", "staff", "payments", "billing", "settings"].includes(sp.tab ?? "") ? sp.tab! : "overview";
   const canManage = role === "owner" || role === "manager";
   const tabs = [
     { key: "overview", label: "Overview", href: `/venue/${id}` },
     { key: "calendar", label: "Calendar", href: `/venue/${id}?tab=calendar` },
+    { key: "recurring", label: "Recurring", href: `/venue/${id}?tab=recurring` },
     { key: "openplay", label: "Open play", href: `/venue/${id}?tab=openplay` },
+    ...(canManage ? [{ key: "announcements", label: "News", href: `/venue/${id}?tab=announcements` }] : []),
     { key: "courts", label: "Courts", href: `/venue/${id}?tab=courts` },
     ...(canManage ? [{ key: "staff", label: "Staff", href: `/venue/${id}?tab=staff` }] : []),
     ...(role === "owner" ? [{ key: "payments", label: "Payments", href: `/venue/${id}?tab=payments` }, { key: "billing", label: "Billing", href: `/venue/${id}?tab=billing` }] : []),
@@ -61,7 +64,9 @@ export default async function VenueDashboard({ params, searchParams }: { params:
           <Flash ok={sp.ok} error={sp.error} />
           {tab === "overview" && <Overview venue={venue} />}
           {tab === "calendar" && <Calendar venueId={id} date={/^\d{4}-\d{2}-\d{2}$/.test(sp.date ?? "") ? sp.date! : manilaToday()} canManage={canManage} />}
+          {tab === "recurring" && <RecurringTab venueId={id} canManage={canManage} />}
           {tab === "openplay" && <OpenPlayTab venueId={id} canManage={canManage} />}
+          {tab === "announcements" && canManage && <Announcements venueId={id} />}
           {tab === "courts" && <Courts venueId={id} canManage={canManage} />}
           {tab === "payments" && role === "owner" && <Payments venueId={id} />}
           {tab === "billing" && role === "owner" && <BillingTab venue={venue} />}
@@ -557,6 +562,138 @@ async function OpenPlayTab({ venueId, canManage }: { venueId: string; canManage:
           <label className="check"><input type="checkbox" name="skill_match" value="1" /> Match players by skill level when possible</label>
           <button className="btn" type="submit">Create session</button>
         </form>
+      )}
+    </>
+  );
+}
+
+const WEEKDAYS = ["Sundays", "Mondays", "Tuesdays", "Wednesdays", "Thursdays", "Fridays", "Saturdays"];
+
+async function RecurringTab({ venueId, canManage }: { venueId: string; canManage: boolean }) {
+  const [series, courts] = await Promise.all([
+    q<{ id: string; customer_name: string; customer_phone: string | null; court: string; weekday: number; start_min: number; end_min: number; first_date: string; weeks: number; price_cents: number; status: string; upcoming: number; last_date: string | null }>(
+      `SELECT s.id, s.customer_name, s.customer_phone, r.name AS court, s.weekday, s.start_min, s.end_min, to_char(s.first_date,'YYYY-MM-DD') AS first_date, s.weeks, s.price_cents, s.status,
+              (SELECT count(*)::int FROM booking b WHERE b.series_id=s.id AND b.status='confirmed' AND b.date >= (now() AT TIME ZONE 'Asia/Manila')::date) AS upcoming,
+              (SELECT to_char(max(b.date),'YYYY-MM-DD') FROM booking b WHERE b.series_id=s.id AND b.status <> 'cancelled') AS last_date
+         FROM booking_series s JOIN resource r ON r.id=s.resource_id WHERE s.venue_id=$1 ORDER BY s.status, s.created_at DESC`,
+      [venueId],
+    ),
+    q<Court>("SELECT id, name, kind, sports, indoor, hourly_rate_cents, active FROM resource WHERE venue_id=$1 AND active ORDER BY sort, created_at", [venueId]),
+  ]);
+  const today = manilaToday();
+  return (
+    <>
+      <section className="app-card">
+        <h2>Recurring bookings</h2>
+        <p className="hint">Weekly slots for leagues, teams and regular groups. Booked as confirmed, paid at the venue, no Playbook booking fee.</p>
+        {series.length === 0 ? <p className="hint">None yet.</p> : (
+          <div className="table-wrap">
+            <table className="data-table">
+              <thead><tr><th scope="col">For</th><th scope="col">When</th><th scope="col">Court</th><th scope="col">Price</th><th scope="col">Upcoming</th><th scope="col" /></tr></thead>
+              <tbody>
+                {series.map((r) => (
+                  <tr key={r.id}>
+                    <td><strong>{r.customer_name}</strong>{r.customer_phone && <><br /><span className="hint">{r.customer_phone}</span></>}</td>
+                    <td>{WEEKDAYS[r.weekday]} · {formatRange(r.start_min, r.end_min)}<br /><span className="hint">{formatDate(r.first_date)} → {r.last_date ? formatDate(r.last_date) : "—"}</span></td>
+                    <td>{r.court}</td>
+                    <td>{peso(r.price_cents)}</td>
+                    <td>{r.status === "cancelled" ? <span className="badge badge-muted">cancelled</span> : r.upcoming}</td>
+                    <td>
+                      {canManage && r.status === "active" && (
+                        <form action={cancelSeries}>
+                          <input type="hidden" name="venue_id" value={venueId} />
+                          <input type="hidden" name="id" value={r.id} />
+                          <button className="btn btn-xs btn-outline" type="submit">Cancel remaining</button>
+                        </form>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+      {canManage && (
+        <form action={createSeries} className="app-card form-grid" style={{ maxWidth: 760 }}>
+          <h3>New recurring booking</h3>
+          <input type="hidden" name="venue_id" value={venueId} />
+          <div className="field-row">
+            <div className="field"><label htmlFor="rs-name">Team or person</label><input id="rs-name" name="customer_name" className="input" required /></div>
+            <div className="field"><label htmlFor="rs-phone">Phone (optional)</label><input id="rs-phone" name="customer_phone" className="input" inputMode="tel" /></div>
+          </div>
+          <div className="field-row">
+            <div className="field"><label htmlFor="rs-court">Court</label>
+              <select id="rs-court" name="resource_id" className="select" required>{courts.map((c) => <option key={c.id} value={c.id}>{c.name} · {peso(c.hourly_rate_cents)}/hr</option>)}</select>
+            </div>
+            <div className="field"><label htmlFor="rs-first">First date (repeats weekly on this day)</label><input id="rs-first" name="first_date" type="date" min={today} defaultValue={today} className="input" required /></div>
+          </div>
+          <div className="field-row">
+            <div className="field"><label htmlFor="rs-start">Start</label><input id="rs-start" name="start" type="time" step={900} className="input" defaultValue="19:00" required /></div>
+            <div className="field"><label htmlFor="rs-dur">Duration (minutes)</label><input id="rs-dur" name="duration" type="number" min={15} step={15} defaultValue={120} className="input" /></div>
+          </div>
+          <div className="field-row">
+            <div className="field"><label htmlFor="rs-weeks">Number of weeks</label><input id="rs-weeks" name="weeks" type="number" min={1} max={52} defaultValue={8} className="input" /></div>
+            <div className="field"><label htmlFor="rs-price">Price per session (₱, blank = court rate)</label><input id="rs-price" name="price" inputMode="decimal" className="input" /></div>
+          </div>
+          <div className="field"><label htmlFor="rs-email">Email (optional)</label><input id="rs-email" name="customer_email" type="email" className="input" /></div>
+          <button className="btn" type="submit">Create weekly bookings</button>
+          <p className="hint">Dates that are already booked or blocked are skipped, and we tell you which.</p>
+        </form>
+      )}
+    </>
+  );
+}
+
+async function Announcements({ venueId }: { venueId: string }) {
+  const [items, followers, threads] = await Promise.all([
+    q<{ id: string; title: string; body: string; created_at: string }>("SELECT id, title, body, created_at FROM venue_announcement WHERE venue_id=$1 ORDER BY created_at DESC LIMIT 50", [venueId]),
+    q1<{ n: number }>("SELECT count(*)::int AS n FROM venue_follower WHERE venue_id=$1", [venueId]),
+    q<{ booking_id: string; ref: string; customer_name: string; body: string; created_at: string; author_side: string }>(
+      `SELECT DISTINCT ON (m.booking_id) m.booking_id, b.ref, b.customer_name, m.body, m.created_at, m.author_side
+         FROM booking_message m JOIN booking b ON b.id=m.booking_id WHERE b.venue_id=$1 ORDER BY m.booking_id, m.created_at DESC`,
+      [venueId],
+    ),
+  ]);
+  const inbox = threads.sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at)).slice(0, 30);
+  return (
+    <>
+      <section className="app-card">
+        <h2>Player messages</h2>
+        {inbox.length === 0 ? <p className="hint">No messages yet. Players can message you from their booking page.</p> : (
+          <ul className="plain-list">
+            {inbox.map((t) => (
+              <li key={t.booking_id}>
+                <Link href={`/bookings/${t.booking_id}#messages`}>{t.customer_name} · {t.ref}</Link> {t.author_side === "player" && <span className="badge badge-warn">needs reply</span>}
+                <br /><span className="hint">{t.body.slice(0, 120)} · {when(t.created_at)}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+      <form action={postAnnouncement} className="app-card form-grid" style={{ maxWidth: 760 }}>
+        <h2>Post an announcement</h2>
+        <p className="hint">Shown on your venue page. {followers?.n ?? 0} player{followers?.n === 1 ? "" : "s"} follow{followers?.n === 1 ? "s" : ""} you.</p>
+        <input type="hidden" name="venue_id" value={venueId} />
+        <div className="field"><label htmlFor="an-title">Title</label><input id="an-title" name="title" className="input" maxLength={120} placeholder="Court 3 resurfacing on Saturday" required /></div>
+        <div className="field"><label htmlFor="an-body">Message</label><textarea id="an-body" name="body" className="input textarea" maxLength={2000} required /></div>
+        <label className="check"><input type="checkbox" name="email" value="1" defaultChecked /> Also email followers</label>
+        <button className="btn" type="submit">Post</button>
+      </form>
+      {items.length > 0 && (
+        <section className="app-card">
+          <h3>Past announcements</h3>
+          {items.map((n) => (
+            <article key={n.id} className="news-item">
+              <div className="inline-form">
+                <strong style={{ marginRight: "auto" }}>{n.title}</strong>
+                <form action={deleteAnnouncement}><input type="hidden" name="venue_id" value={venueId} /><input type="hidden" name="id" value={n.id} /><button className="btn btn-xs btn-outline" type="submit">Delete</button></form>
+              </div>
+              <p>{n.body}</p>
+              <span className="hint">{when(n.created_at)}</span>
+            </article>
+          ))}
+        </section>
       )}
     </>
   );

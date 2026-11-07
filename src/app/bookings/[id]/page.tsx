@@ -13,6 +13,8 @@ import { emailBookingConfirmed } from "@/lib/server/notify";
 import { checkoutPayments } from "@/lib/server/paymongo";
 import { getSession, isPlatformAdmin, venueRole } from "@/lib/server/session";
 import { cancelBooking, confirmAtVenue, payOnline } from "../actions";
+import { postBookingMessage } from "../../messages/actions";
+import { q } from "@/lib/server/db";
 
 export const metadata: Metadata = { title: "Booking — Playbook", robots: { index: false } };
 export const dynamic = "force-dynamic";
@@ -54,6 +56,7 @@ export default async function BookingPage({ params, searchParams }: { params: Pr
     }
   }
   const court = await q1<{ name: string }>("SELECT name FROM resource WHERE id=$1", [b.resource_id]);
+  const messages = await q<{ id: string; author_side: string; body: string; created_at: string }>("SELECT id, author_side, body, created_at FROM booking_message WHERE booking_id=$1 ORDER BY created_at", [b.id]);
   const [label, cls] = STATUS[b.status] ?? [b.status, "badge-muted"];
   const sport = SPORTS.find((s) => s.id === b!.sport)?.name ?? b.sport;
   const online = !!v.paymongo_connected_at;
@@ -120,6 +123,26 @@ export default async function BookingPage({ params, searchParams }: { params: Pr
               </form>
             </section>
           )}
+          <section className="app-card" id="messages">
+            <h3>Messages</h3>
+            <p className="hint">{isPlayer ? `Questions about this booking? Message ${v.name} here.` : "Messages with the player about this booking."}</p>
+            {messages.length > 0 && (
+              <ul className="thread">
+                {messages.map((m) => (
+                  <li key={m.id} className={`msg ${m.author_side === (isPlayer ? "player" : "venue") ? "mine" : ""}`}>
+                    <span className="msg-who">{m.author_side === "venue" ? v.name : b!.customer_name} · {when(m.created_at)}</span>
+                    <p>{m.body}</p>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <form action={postBookingMessage} className="form-grid">
+              <input type="hidden" name="booking_id" value={b.id} />
+              {!isPlayer && <input type="hidden" name="as" value="venue" />}
+              <textarea className="input textarea" name="body" maxLength={2000} required aria-label="Message" placeholder={isPlayer ? "e.g. Can we add 30 minutes?" : "Reply to the player"} />
+              <button className="btn btn-sm" type="submit">Send</button>
+            </form>
+          </section>
           <p><Link href={isPlayer ? "/account" : `/venue/${b.venue_id}?tab=calendar&date=${b.date}`}>← Back</Link></p>
         </div>
       </div>

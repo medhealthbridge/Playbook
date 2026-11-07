@@ -3396,3 +3396,44 @@ a[role="tab"] {
   color: var(--muted-dark);
   margin-top: 8px;
 }
+
+/* ---------------- messages / news ---------------- */
+.thread {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+.msg {
+  max-width: 86%;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: #eef1ea;
+  justify-self: start;
+}
+.msg.mine {
+  background: var(--lime);
+  justify-self: end;
+}
+.msg p {
+  margin: 4px 0 0;
+  white-space: pre-line;
+}
+.msg-who {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+.msg.mine .msg-who {
+  color: #3b463f;
+}
+.news-item {
+  display: grid;
+  gap: 4px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line-light);
+}
+.news-item p {
+  margin: 0;
+  white-space: pre-line;
+}

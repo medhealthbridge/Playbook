@@ -9,6 +9,8 @@ import { bookingDates, durationsFor, expireHolds, startsFor, venueBySlug, venueR
 import { getSession } from "@/lib/server/session";
 import { upcomingPublicSessions } from "@/lib/server/openplay";
 import { holdBooking } from "../../bookings/actions";
+import { toggleFollow } from "../../messages/actions";
+import { q, q1 } from "@/lib/server/db";
 
 export const dynamic = "force-dynamic";
 
@@ -22,7 +24,11 @@ export default async function VenuePage({ params, searchParams }: { params: Prom
   const sp = await searchParams;
   const venue = await venueBySlug(slug);
   if (!venue || venue.status !== "active") notFound();
-  const [resources, session, openPlay] = await Promise.all([venueResources(venue.id), getSession(), upcomingPublicSessions(venue.id)]);
+  const [resources, session, openPlay, news] = await Promise.all([
+    venueResources(venue.id), getSession(), upcomingPublicSessions(venue.id),
+    q<{ id: string; title: string; body: string; created_at: string }>("SELECT id, title, body, created_at FROM venue_announcement WHERE venue_id=$1 ORDER BY created_at DESC LIMIT 3", [venue.id]),
+  ]);
+  const following = session ? !!(await q1("SELECT 1 FROM venue_follower WHERE venue_id=$1 AND user_id=$2", [venue.id, session.user.id])) : false;
   const sportName = (id: string) => SPORTS.find((s) => s.id === id)?.name ?? id;
   const sports = [...new Set(resources.flatMap((r) => r.sports))];
   const sport = sports.includes(sp.sport ?? "") ? sp.sport! : sports[0];
@@ -41,10 +47,15 @@ export default async function VenuePage({ params, searchParams }: { params: Prom
 
   return (
     <main id="main" className="app-shell">
-      <PortalHeader eyebrow={`${venue.area} · open ${venue.open_time}–${venue.close_time}`} title={venue.name} actions={<Link href="/venues" className="btn btn-xs btn-ghost">All venues</Link>} />
+      <PortalHeader eyebrow={`${venue.area} · open ${venue.open_time}–${venue.close_time}`} title={venue.name} actions={
+        <>
+          <form action={toggleFollow}><input type="hidden" name="venue_id" value={venue.id} /><input type="hidden" name="slug" value={slug} /><button className={`btn btn-xs ${following ? "btn-ghost" : ""}`} type="submit">{following ? "Following ✓" : "Follow"}</button></form>
+          <Link href="/venues" className="btn btn-xs btn-ghost">All venues</Link>
+        </>
+      } />
       <div className="app-body">
         <div className="container app-stack">
-          <Flash error={sp.error} />
+          <Flash ok={sp.ok} error={sp.error} />
           <div className="app-grid">
             <section className="app-card" aria-labelledby="pick">
               <h2 id="pick">Pick a time</h2>
@@ -98,6 +109,18 @@ export default async function VenuePage({ params, searchParams }: { params: Prom
                 </dl>
                 <p className="hint">You pay {venue.name} directly. Playbook doesn&apos;t hold your money.</p>
               </section>
+              {news.length > 0 && (
+                <section className="app-card">
+                  <h3>News</h3>
+                  {news.map((n) => (
+                    <article key={n.id} className="news-item">
+                      <strong>{n.title}</strong>
+                      <p>{n.body}</p>
+                      <span className="hint">{new Date(n.created_at).toLocaleDateString("en-PH", { timeZone: "Asia/Manila", dateStyle: "medium" })}</span>
+                    </article>
+                  ))}
+                </section>
+              )}
               {openPlay.length > 0 && (
                 <section className="app-card">
                   <h3>Open play</h3>

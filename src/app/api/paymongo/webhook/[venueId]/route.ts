@@ -4,6 +4,7 @@ import { BookingError, bookingByCheckout, bookingById, confirmBooking, venueById
 import { decrypt } from "@/lib/server/crypto";
 import { q, q1 } from "@/lib/server/db";
 import { emailBookingConfirmed } from "@/lib/server/notify";
+import { markOpenPlayPaid } from "@/lib/server/openplay";
 
 export const dynamic = "force-dynamic";
 
@@ -38,6 +39,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ venueId
   );
   if (!fresh) return NextResponse.json({ ok: true, duplicate: true });
 
+  if (type === "checkout_session.payment.paid" && obj.attributes.metadata?.open_play_player_id) {
+    const paid = (obj.attributes.payments ?? []).filter((p) => p.attributes.status === "paid");
+    await markOpenPlayPaid(obj.attributes.metadata.open_play_player_id, paid.reduce((s, p) => s + p.attributes.amount, 0), paid[0]?.id ?? null);
+    return NextResponse.json({ ok: true });
+  }
   if (type === "checkout_session.payment.paid") {
     const b = (obj.attributes.metadata?.booking_id && (await bookingById(obj.attributes.metadata.booking_id))) || (await bookingByCheckout(obj.id));
     if (!b || b.venue_id !== venueId) return NextResponse.json({ ok: true, ignored: "no booking" });

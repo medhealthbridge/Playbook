@@ -8,7 +8,8 @@ import { SPORTS } from "@/content/sports";
 import { BookingError, confirmBooking, venueById, venueResources } from "@/lib/server/bookings";
 import { makeRef, priceCents } from "@/lib/booking/engine";
 import { encrypt, decrypt } from "@/lib/server/crypto";
-import { PaymongoError, createWebhook, disableWebhook, keyMode, verifySecretKey } from "@/lib/server/paymongo";
+import { PaymongoError, createCheckout, createWebhook, disableWebhook, keyMode, verifySecretKey } from "@/lib/server/paymongo";
+import { PLAN_IDS, platformPaymongo } from "@/lib/server/billing";
 
 const SPORT_IDS = new Set(SPORTS.map((s) => s.id));
 const KIND_FOR: Record<string, string> = { billiards: "table", "table-tennis": "table", futsal: "pitch" };
@@ -328,4 +329,46 @@ export async function setPayAtVenue(formData: FormData) {
   await audit(user.id, "payments.pay_at_venue", "venue", venueId, { allow });
   revalidatePath(`/venue/${venueId}`);
   back(`/venue/${venueId}?tab=payments`, { ok: allow ? "Players can confirm now and pay at the venue." : "Players must pay online to confirm." });
+}
+
+// ---------------------------------------------------------------- Phase 3: billing
+
+export async function choosePlan(formData: FormData) {
+  const venueId = str(formData, "venue_id", 60);
+  const { user } = await requireVenueRole(venueId, "owner");
+  const plan = str(formData, "plan", 10);
+  if (!(PLAN_IDS as string[]).includes(plan)) back(`/venue/${venueId}?tab=billing`, { error: "Choose a plan." });
+  await q("UPDATE venue SET plan=$2, plan_chosen_at=now(), updated_at=now() WHERE id=$1", [venueId, plan]);
+  await audit(user.id, "venue.plan", "venue", venueId, { plan });
+  revalidatePath(`/venue/${venueId}`);
+  back(`/venue/${venueId}?tab=billing`, { ok: "Plan saved. Billing starts when your free trial ends." });
+}
+
+export async function payInvoice(formData: FormData) {
+  const venueId = str(formData, "venue_id", 60);
+  const id = str(formData, "id", 60);
+  await requireVenueRole(venueId, "owner");
+  const path = `/venue/${venueId}/invoice/${id}`;
+  const inv = await q1<{ number: string; total_cents: number; status: string; email: string; name: string }>(
+    `SELECT i.number, i.total_cents, i.status, u.email, v.name FROM invoice i JOIN venue v ON v.id=i.venue_id
+       JOIN venue_member m ON m.venue_id=v.id AND m.role='owner' JOIN "user" u ON u.id=m.user_id WHERE i.id=$1 AND i.venue_id=$2 LIMIT 1`,
+    [id, venueId],
+  );
+  if (!inv || inv.status !== "open") back(path, { error: "This invoice isn't open for payment." });
+  const pm = await platformPaymongo();
+  if (!pm) back(path, { error: "Online payment isn't available yet. Use the payment instructions below." });
+  const base = process.env.BETTER_AUTH_URL || "https://playbook.databridgesol.space";
+  let url: string;
+  try {
+    const c = await createCheckout(decrypt(pm!.secret_enc), {
+      amountCents: inv!.total_cents, name: `Playbook invoice ${inv!.number}`, description: `${inv!.name} · ${inv!.number}`, reference: inv!.number,
+      successUrl: `${base}${path}?paid=1`, cancelUrl: `${base}${path}`, customer: { name: inv!.name, email: inv!.email }, metadata: { invoice_id: id, venue_id: venueId },
+    });
+    await q("UPDATE invoice SET checkout_session_id=$2 WHERE id=$1", [id, c.id]);
+    url = c.url;
+  } catch (e) {
+    console.error("invoice checkout failed", e);
+    back(path, { error: "Couldn't start the payment. Please try again." });
+  }
+  redirect(url!);
 }

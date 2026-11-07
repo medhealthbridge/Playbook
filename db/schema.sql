@@ -175,3 +175,38 @@ CREATE TABLE IF NOT EXISTS payment_event (
   payload     jsonb NOT NULL,
   received_at timestamptz NOT NULL DEFAULT now()
 );
+
+-- ---------------------------------------------------------------- Phase 3: billing
+-- Plan prices (monthly, centavos) and billing settings, edited by the platform admin.
+INSERT INTO platform_setting (key, value) VALUES
+  ('plan_prices', '{"manage":0,"capture":0,"club":0}'),
+  ('billing', '{"manual_instructions":"","due_days":7}')
+ON CONFLICT (key) DO NOTHING;
+
+-- Monthly invoices to venues: subscription + Playbook booking fees for the period.
+CREATE TABLE IF NOT EXISTS invoice (
+  id                  text PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  number              text NOT NULL UNIQUE,
+  venue_id            text NOT NULL REFERENCES venue(id) ON DELETE CASCADE,
+  period_start        date NOT NULL,
+  period_end          date NOT NULL,
+  plan                text NOT NULL,
+  subscription_cents  int  NOT NULL DEFAULT 0,
+  booking_count       int  NOT NULL DEFAULT 0,
+  booking_fee_cents   int  NOT NULL DEFAULT 0,
+  total_cents         int  NOT NULL,
+  status              text NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'paid', 'void')),
+  due_date            date NOT NULL,
+  checkout_session_id text,
+  payment_id          text,
+  paid_via            text,
+  paid_at             timestamptz,
+  note                text,
+  created_by          text REFERENCES "user"(id) ON DELETE SET NULL,
+  created_at          timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (venue_id, period_start)
+);
+CREATE INDEX IF NOT EXISTS invoice_status_idx ON invoice (status, due_date);
+
+-- When a plan was chosen (trial venues pick a plan before the trial ends).
+ALTER TABLE venue ADD COLUMN IF NOT EXISTS plan_chosen_at timestamptz;

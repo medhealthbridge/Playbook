@@ -5,12 +5,14 @@ import { SignOutButton } from "@/components/auth/SignOutButton";
 import { q, q1 } from "@/lib/server/db";
 import { emailConfigured } from "@/lib/server/email";
 import { requireAdmin } from "@/lib/server/session";
-import { saveSettings, setUserBan, setUserRole, setVenueStatus } from "./actions";
+import { connectPlatformPaymongo, runInvoices, saveBilling, saveSettings, setInvoiceStatus, setUserBan, setUserRole, setVenueStatus } from "./actions";
+import { PLAN_IDS, billingSettings, planPrices, platformPaymongo } from "@/lib/server/billing";
+import { addDays, manilaToday } from "@/lib/booking/time";
 
 export const metadata: Metadata = { title: "Platform admin — Playbook", robots: { index: false } };
 export const dynamic = "force-dynamic";
 
-const TABS = ["overview", "venues", "users", "audit", "settings"] as const;
+const TABS = ["overview", "venues", "billing", "users", "audit", "settings"] as const;
 
 export default async function AdminPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const sp = await searchParams;
@@ -30,9 +32,10 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
           <Flash ok={sp.ok} error={sp.error} />
           {tab === "overview" && <Overview />}
           {tab === "venues" && <Venues filter={sp.status} />}
+          {tab === "billing" && <Billing month={sp.month} status={sp.status} />}
           {tab === "users" && <Users meId={admin.id} search={sp.q} />}
           {tab === "audit" && <Audit />}
-          {tab === "settings" && <Settings />}
+          {tab === "settings" && <><Settings /><BillingSettings /></>}
         </div>
       </div>
     </main>
@@ -48,7 +51,10 @@ async function Overview() {
             (SELECT count(*)::int FROM "user" WHERE "createdAt" > now() - interval '7 days') AS new_users,
             (SELECT count(*)::int FROM booking WHERE status IN ('confirmed','completed')) AS bookings,
             (SELECT coalesce(sum(platform_fee_cents),0)::int FROM booking WHERE status IN ('confirmed','completed') AND date_trunc('month',created_at)=date_trunc('month',now())) AS fees_month,
-            (SELECT count(*)::int FROM venue WHERE plan='trial' AND trial_ends_at BETWEEN now() AND now() + interval '7 days') AS trials_ending`,
+            (SELECT count(*)::int FROM venue WHERE plan='trial' AND trial_ends_at BETWEEN now() AND now() + interval '7 days') AS trials_ending,
+            (SELECT count(*)::int FROM venue WHERE status='active' AND plan='trial' AND trial_ends_at < now()) AS trials_over,
+            (SELECT coalesce(sum(total_cents),0)::int FROM invoice WHERE status='open') AS open_cents,
+            (SELECT count(*)::int FROM invoice WHERE status='open' AND due_date < (now() AT TIME ZONE 'Asia/Manila')::date) AS overdue`,
   ))!;
   return (
     <>
@@ -59,6 +65,8 @@ async function Overview() {
         <div className="stat"><b>{s.users}</b><span>Accounts ({s.new_users} new this week)</span></div>
         <div className="stat"><b>{s.bookings}</b><span>Confirmed bookings</span></div>
         <div className="stat"><b>{peso(s.fees_month)}</b><span>Booking fees this month</span></div>
+        <Link href="/admin?tab=billing&status=open" className="stat"><b>{peso(s.open_cents)}</b><span>Unpaid invoices ({s.overdue} overdue)</span></Link>
+        <div className="stat"><b>{s.trials_over}</b><span>Trials ended without a plan</span></div>
       </div>
       {!emailConfigured() && (
         <div className="alert alert-warn">Email isn&apos;t configured yet, so confirmation and reset emails are only logged and sign-ups aren&apos;t required to confirm their email. Add a Resend API key to turn on real emails.</div>
@@ -236,10 +244,115 @@ async function Settings() {
         <legend><h3>Integrations</h3></legend>
         <dl className="kv">
           <dt>Email (Resend)</dt><dd>{emailConfigured() ? <span className="badge badge-ok">Connected</span> : <span className="badge badge-warn">Not configured</span>}</dd>
-          <dt>Subscription billing (PayMongo)</dt><dd><span className="badge badge-muted">Not connected yet</span></dd>
+          <dt>Invoice payments (PayMongo)</dt><dd>See &quot;Your PayMongo account&quot; below</dd>
         </dl>
       </fieldset>
       <button className="btn" type="submit">Save settings</button>
     </form>
+  );
+}
+
+async function Billing({ month, status }: { month?: string; status?: string }) {
+  const today = manilaToday();
+  const lastMonth = addDays(`${today.slice(0, 7)}-01`, -1).slice(0, 7);
+  const m = /^\d{4}-\d{2}$/.test(month ?? "") ? month! : lastMonth;
+  const st = ["open", "paid", "void"].includes(status ?? "") ? status! : null;
+  const [prices, invoices, mrr] = await Promise.all([
+    planPrices(),
+    q<{ id: string; number: string; venue: string; venue_id: string; period_start: string; subscription_cents: number; booking_count: number; booking_fee_cents: number; total_cents: number; status: string; due_date: string; paid_via: string | null; note: string | null }>(
+      `SELECT i.id, i.number, v.name AS venue, v.id AS venue_id, to_char(i.period_start,'Mon YYYY') AS period_start, i.subscription_cents, i.booking_count, i.booking_fee_cents, i.total_cents, i.status, to_char(i.due_date,'Mon DD') AS due_date, i.paid_via, i.note
+         FROM invoice i JOIN venue v ON v.id=i.venue_id WHERE ($1::text IS NULL OR i.status=$1) ORDER BY i.period_start DESC, v.name LIMIT 300`,
+      [st],
+    ),
+    q1<{ plans: Record<string, number> | null }>("SELECT json_object_agg(plan, n) AS plans FROM (SELECT plan, count(*)::int AS n FROM venue WHERE status='active' GROUP BY plan) t"),
+  ]);
+  const counts = mrr?.plans ?? {};
+  const monthly = PLAN_IDS.reduce((s, p) => s + (counts[p] ?? 0) * prices[p], 0);
+  return (
+    <>
+      <div className="stat-row">
+        <div className="stat"><b>{peso(monthly)}</b><span>Monthly subscriptions (live venues on paid plans)</span></div>
+        {(["trial", ...PLAN_IDS] as string[]).map((p) => <div key={p} className="stat"><b>{counts[p] ?? 0}</b><span>{p === "trial" ? "On free trial" : `${p[0].toUpperCase()}${p.slice(1)} · ${peso(prices[p as keyof typeof prices])}/mo`}</span></div>)}
+      </div>
+      <form action={runInvoices} className="app-card inline-form">
+        <h2 style={{ marginRight: "auto" }}>Create invoices</h2>
+        <label className="hint" htmlFor="month">Month</label>
+        <input id="month" name="month" type="month" className="input" defaultValue={m} max={today.slice(0, 7)} />
+        <button className="btn btn-sm" type="submit">Create invoices</button>
+        <p className="hint" style={{ flexBasis: "100%" }}>Bills each live venue for that month: its plan price (none while on trial) plus Playbook booking fees. Venues with nothing to bill are skipped; running it again never duplicates.</p>
+      </form>
+      <section className="app-card">
+        <div className="inline-form">
+          <h2 style={{ marginRight: "auto" }}>Invoices</h2>
+          {["all", "open", "paid", "void"].map((f) => (
+            <Link key={f} className={`btn btn-xs ${(st ?? "all") === f ? "" : "btn-outline"}`} href={f === "all" ? "/admin?tab=billing" : `/admin?tab=billing&status=${f}`}>{f}</Link>
+          ))}
+        </div>
+        {invoices.length === 0 ? <p className="hint">No invoices yet.</p> : (
+          <div className="table-wrap">
+            <table className="data-table">
+              <thead><tr><th scope="col">Invoice</th><th scope="col">Venue</th><th scope="col">Plan</th><th scope="col">Booking fees</th><th scope="col">Total</th><th scope="col">Status</th><th scope="col">Action</th></tr></thead>
+              <tbody>
+                {invoices.map((i) => (
+                  <tr key={i.id}>
+                    <td><Link href={`/venue/${i.venue_id}/invoice/${i.id}`}>{i.number}</Link><br /><span className="hint">{i.period_start} · due {i.due_date}</span></td>
+                    <td>{i.venue}</td>
+                    <td>{peso(i.subscription_cents)}</td>
+                    <td>{peso(i.booking_fee_cents)}<br /><span className="hint">{i.booking_count} bookings</span></td>
+                    <td><strong>{peso(i.total_cents)}</strong></td>
+                    <td><span className={`badge ${i.status === "paid" ? "badge-ok" : i.status === "open" ? "badge-warn" : "badge-muted"}`}>{i.status}</span>{i.paid_via && <><br /><span className="hint">{i.paid_via}</span></>}</td>
+                    <td>
+                      {i.status === "open" && (
+                        <form action={setInvoiceStatus} className="inline-form">
+                          <input type="hidden" name="id" value={i.id} />
+                          <input type="hidden" name="action" value="paid" />
+                          <input className="input" name="note" placeholder="Note (e.g. GCash ref)" aria-label="Note" />
+                          <button className="btn btn-xs" type="submit">Mark paid</button>
+                        </form>
+                      )}
+                      {i.status === "open" && (
+                        <form action={setInvoiceStatus}>
+                          <input type="hidden" name="id" value={i.id} />
+                          <input type="hidden" name="action" value="void" />
+                          <button className="btn btn-xs btn-outline" type="submit">Void</button>
+                        </form>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+    </>
+  );
+}
+
+async function BillingSettings() {
+  const [prices, billing, pm] = await Promise.all([planPrices(), billingSettings(), platformPaymongo()]);
+  return (
+    <>
+      <form action={saveBilling} className="app-card form-grid" style={{ maxWidth: 720 }}>
+        <h2>Venue plans and invoices</h2>
+        <p className="hint">Monthly price per plan in pesos. Venues pay nothing during their free trial. Price changes apply to the next invoices you create.</p>
+        <div className="field-row">
+          {PLAN_IDS.map((p) => (
+            <div key={p} className="field"><label htmlFor={`price_${p}`}>{p[0].toUpperCase() + p.slice(1)} (₱/month)</label><input id={`price_${p}`} name={`price_${p}`} className="input" inputMode="decimal" defaultValue={prices[p] / 100} /></div>
+          ))}
+        </div>
+        {PLAN_IDS.some((p) => prices[p] === 0) && <div className="alert alert-warn">Some plans are priced at ₱0. Set prices before venues&apos; trials end.</div>}
+        <div className="field"><label htmlFor="due_days">Payment terms (days after month end)</label><input id="due_days" name="due_days" type="number" min={0} max={60} className="input" defaultValue={billing.due_days} /></div>
+        <div className="field"><label htmlFor="manual_instructions">How venues can pay manually (shown on invoices)</label><textarea id="manual_instructions" name="manual_instructions" className="input textarea" defaultValue={billing.manual_instructions} placeholder="e.g. GCash 0917 000 0000 (Playbook Inc.) or BDO account …, then reply with the reference number." /></div>
+        <button className="btn" type="submit">Save billing settings</button>
+      </form>
+      <form action={connectPlatformPaymongo} className="app-card form-grid" style={{ maxWidth: 720 }}>
+        <h2>Your PayMongo account (for invoice payments)</h2>
+        {pm ? <div className="alert alert-ok">Connected in <strong>{pm.livemode ? "live" : "test"}</strong> mode since {when(pm.connected_at)}.</div> : <p className="hint">Connect Playbook&apos;s own PayMongo account so venues can pay invoices by GCash, Maya or card. Until then, venues see your manual payment instructions.</p>}
+        <div className="field"><label htmlFor="ppk">Public key</label><input id="ppk" name="public_key" className="input" placeholder="pk_live_…" autoComplete="off" required /></div>
+        <div className="field"><label htmlFor="psk">Secret key</label><input id="psk" name="secret_key" type="password" className="input" placeholder="sk_live_…" autoComplete="off" required /></div>
+        <button className="btn btn-sm" type="submit">{pm ? "Replace keys" : "Connect PayMongo"}</button>
+      </form>
+    </>
   );
 }

@@ -5,6 +5,9 @@ import { audit, q, q1 } from "@/lib/server/db";
 import { actionEmail, sendEmail } from "@/lib/server/email";
 import { int, str } from "@/lib/server/form";
 import { requireAdmin } from "@/lib/server/session";
+import { PLAN_IDS, generateInvoices, markInvoicePaid, platformPaymongo, putSetting } from "@/lib/server/billing";
+import { decrypt, encrypt } from "@/lib/server/crypto";
+import { PaymongoError, createWebhook, disableWebhook, keyMode, verifySecretKey } from "@/lib/server/paymongo";
 
 const back = (tab: string, msg: { ok?: string; error?: string }) =>
   redirect(`/admin?tab=${tab}&${msg.ok ? `ok=${encodeURIComponent(msg.ok)}` : `error=${encodeURIComponent(msg.error!)}`}`);
@@ -88,4 +91,66 @@ export async function saveSettings(formData: FormData) {
   await audit(admin.id, "settings.update", "platform", null, { fee, trial });
   revalidatePath("/admin");
   back("settings", { ok: "Settings saved. New values apply to new bookings and new venues." });
+}
+
+// ---------------------------------------------------------------- Phase 3: billing
+
+export async function runInvoices(formData: FormData) {
+  const admin = await requireAdmin();
+  const month = str(formData, "month", 7);
+  if (!/^\d{4}-\d{2}$/.test(month)) back("billing", { error: "Pick a month." });
+  const r = await generateInvoices(month, admin.id);
+  revalidatePath("/admin");
+  redirect(`/admin?tab=billing&month=${month}&ok=${encodeURIComponent(`${r.created} invoice(s) created, ${r.skipped} skipped (nothing to bill or already invoiced).`)}`);
+}
+
+export async function setInvoiceStatus(formData: FormData) {
+  const admin = await requireAdmin();
+  const id = str(formData, "id", 60);
+  const action = str(formData, "action", 10);
+  const note = str(formData, "note", 200);
+  if (action === "paid") {
+    await markInvoicePaid(id, `manual${note ? `: ${note}` : ""}`, admin.id);
+  } else if (action === "void") {
+    await q("UPDATE invoice SET status='void', note=$2 WHERE id=$1 AND status='open'", [id, note || "Voided"]);
+    await audit(admin.id, "invoice.void", "invoice", id, { note });
+  } else back("billing", { error: "Unknown action." });
+  revalidatePath("/admin");
+  back("billing", { ok: action === "paid" ? "Invoice marked as paid." : "Invoice voided." });
+}
+
+export async function saveBilling(formData: FormData) {
+  const admin = await requireAdmin();
+  const prices = Object.fromEntries(PLAN_IDS.map((p) => [p, Math.round(Number.parseFloat(str(formData, `price_${p}`, 12) || "0") * 100)]));
+  if (Object.values(prices).some((c) => !(c >= 0))) back("settings", { error: "Plan prices must be zero or more." });
+  const dueDays = int(formData, "due_days", 7);
+  if (dueDays < 0 || dueDays > 60) back("settings", { error: "Payment terms must be 0–60 days." });
+  await putSetting("plan_prices", prices, admin.id);
+  await putSetting("billing", { manual_instructions: str(formData, "manual_instructions", 600), due_days: dueDays }, admin.id);
+  await audit(admin.id, "billing.settings", "platform", null, { prices, dueDays });
+  revalidatePath("/admin");
+  back("settings", { ok: "Billing settings saved." });
+}
+
+export async function connectPlatformPaymongo(formData: FormData) {
+  const admin = await requireAdmin();
+  const pk = str(formData, "public_key", 200);
+  const sk = str(formData, "secret_key", 200);
+  const mode = keyMode(sk);
+  if (!pk.startsWith("pk_") || !sk.startsWith("sk_") || !mode || keyMode(pk) !== mode) back("settings", { error: "Paste your PayMongo public and secret keys from the same mode." });
+  const base = process.env.BETTER_AUTH_URL || "https://playbook.databridgesol.space";
+  try {
+    await verifySecretKey(sk);
+    const old = await platformPaymongo();
+    if (old) await disableWebhook(decrypt(old.secret_enc), old.webhook_id);
+    const wh = await createWebhook(sk, `${base}/api/paymongo/platform`);
+    await putSetting("platform_paymongo", { public_key: pk, secret_enc: encrypt(sk), webhook_id: wh.id, webhook_secret_enc: encrypt(wh.secretKey), livemode: mode === "live", connected_at: new Date().toISOString() }, admin.id);
+  } catch (e) {
+    if (e instanceof PaymongoError) back("settings", { error: `PayMongo said: ${e.message}` });
+    console.error("platform paymongo connect failed", e);
+    back("settings", { error: "Couldn't reach PayMongo. Please try again." });
+  }
+  await audit(admin.id, "billing.paymongo_connect", "platform", null, { mode });
+  revalidatePath("/admin");
+  back("settings", { ok: `Your PayMongo account is connected (${mode} mode). Venues can pay invoices online.` });
 }

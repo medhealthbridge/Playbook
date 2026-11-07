@@ -3145,3 +3145,49 @@ a[role="tab"] {
   margin: 0 4px 0 10px;
   vertical-align: -1px;
 }
+
+/* ---------------- billing ---------------- */
+.plan-pick {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+.plan-opt {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+  padding: 16px;
+  border-radius: 12px;
+  border: 1.5px solid var(--line-light);
+  background: var(--paper);
+}
+.plan-opt.is-current {
+  border-color: var(--charcoal);
+}
+.plan-opt .price {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 1.4rem;
+  margin: 0;
+}
+.plan-opt .btn,
+.plan-opt .badge {
+  justify-self: start;
+}
+.invoice h1 {
+  font-size: clamp(1.8rem, 5vw, 2.6rem);
+}
+@media print {
+  .nav,
+  .no-print,
+  .footer,
+  .mobile-bar {
+    display: none !important;
+  }
+  .app-shell {
+    padding-top: 0;
+  }
+  .invoice {
+    border: 0;
+  }
+}

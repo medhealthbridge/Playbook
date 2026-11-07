@@ -6,10 +6,12 @@ import { Flash, PortalHeader, VenueStatus, peso, when } from "@/components/porta
 import { SPORTS } from "@/content/sports";
 import { q, q1 } from "@/lib/server/db";
 import { requireVenueRole } from "@/lib/server/session";
-import { addBlock, addCourt, addMember, checkIn, connectPaymongo, disconnectPaymongo, markNoShow, removeBlock, removeMember, setPayAtVenue, updateCourt, updateVenue, walkIn } from "../actions";
+import { choosePlan, addBlock, addCourt, addMember, checkIn, connectPaymongo, disconnectPaymongo, markNoShow, removeBlock, removeMember, setPayAtVenue, updateCourt, updateVenue, walkIn } from "../actions";
 import { addDays, formatDate, formatRange, formatTime, manilaToday } from "@/lib/booking/time";
 import { hmToMin } from "@/lib/booking/engine";
 import { blocksOn, venueBookingsOn, venueById as getVenue } from "@/lib/server/bookings";
+import { PLAN_IDS, billingSettings, feesFor, monthRange, planPrices, platformPaymongo, subscriptionFor } from "@/lib/server/billing";
+import { VENUE_PLANS } from "@/content/plans";
 
 export const metadata: Metadata = { title: "Venue dashboard — Playbook", robots: { index: false } };
 export const dynamic = "force-dynamic";
@@ -31,14 +33,14 @@ export default async function VenueDashboard({ params, searchParams }: { params:
     [id],
   );
   if (!venue) notFound();
-  const tab = ["overview", "calendar", "courts", "staff", "payments", "settings"].includes(sp.tab ?? "") ? sp.tab! : "overview";
+  const tab = ["overview", "calendar", "courts", "staff", "payments", "billing", "settings"].includes(sp.tab ?? "") ? sp.tab! : "overview";
   const canManage = role === "owner" || role === "manager";
   const tabs = [
     { key: "overview", label: "Overview", href: `/venue/${id}` },
     { key: "calendar", label: "Calendar", href: `/venue/${id}?tab=calendar` },
     { key: "courts", label: "Courts", href: `/venue/${id}?tab=courts` },
     ...(canManage ? [{ key: "staff", label: "Staff", href: `/venue/${id}?tab=staff` }] : []),
-    ...(role === "owner" ? [{ key: "payments", label: "Payments", href: `/venue/${id}?tab=payments` }] : []),
+    ...(role === "owner" ? [{ key: "payments", label: "Payments", href: `/venue/${id}?tab=payments` }, { key: "billing", label: "Billing", href: `/venue/${id}?tab=billing` }] : []),
     ...(canManage ? [{ key: "settings", label: "Settings", href: `/venue/${id}?tab=settings` }] : []),
   ];
 
@@ -58,6 +60,7 @@ export default async function VenueDashboard({ params, searchParams }: { params:
           {tab === "calendar" && <Calendar venueId={id} date={/^\d{4}-\d{2}-\d{2}$/.test(sp.date ?? "") ? sp.date! : manilaToday()} canManage={canManage} />}
           {tab === "courts" && <Courts venueId={id} canManage={canManage} />}
           {tab === "payments" && role === "owner" && <Payments venueId={id} />}
+          {tab === "billing" && role === "owner" && <BillingTab venue={venue} />}
           {tab === "staff" && canManage && <Staff venueId={id} isOwner={role === "owner"} />}
           {tab === "settings" && canManage && <Settings venue={venue} />}
         </div>
@@ -76,6 +79,11 @@ async function Overview({ venue }: { venue: Venue }) {
   );
   return (
     <>
+      {venue.status === "active" && venue.plan === "trial" && venue.trial_ends_at && (
+        <div className={`alert ${new Date(venue.trial_ends_at) < new Date() ? "alert-error" : "alert-info"}`}>
+          {new Date(venue.trial_ends_at) < new Date() ? "Your free trial has ended." : `Free trial until ${when(venue.trial_ends_at)}.`} <Link href={`/venue/${venue.id}?tab=billing`}>Choose a plan</Link> to keep taking bookings.
+        </div>
+      )}
       {venue.status === "pending" && <div className="alert alert-info">Your venue is under review. We check the business details and courts, then email you when it&apos;s live. Players can&apos;t see it yet.</div>}
       {venue.status === "rejected" && <div className="alert alert-error">Not approved{venue.status_reason ? `: ${venue.status_reason}` : "."} Update your details and contact support to request another review.</div>}
       {venue.status === "suspended" && <div className="alert alert-error">Suspended{venue.status_reason ? `: ${venue.status_reason}` : "."} New bookings are paused. Contact support.</div>}
@@ -419,6 +427,69 @@ async function Payments({ venueId }: { venueId: string }) {
         <input type="hidden" name="allow" value={v?.allow_pay_at_venue ? "0" : "1"} />
         <button className="btn btn-sm btn-outline" type="submit">{v?.allow_pay_at_venue ? "Require online payment" : "Allow pay at the venue"}</button>
       </form>
+    </>
+  );
+}
+
+async function BillingTab({ venue }: { venue: Venue }) {
+  const today = manilaToday();
+  const { start, end } = monthRange(today.slice(0, 7));
+  const [prices, usage, invoices] = await Promise.all([
+    planPrices(),
+    feesFor(venue.id, start, end),
+    q<{ id: string; number: string; period: string; total_cents: number; status: string; due_date: string; overdue: boolean }>(
+      `SELECT id, number, to_char(period_start,'Mon YYYY') AS period, total_cents, status, to_char(due_date,'Mon DD, YYYY') AS due_date,
+              (status='open' AND due_date < (now() AT TIME ZONE 'Asia/Manila')::date) AS overdue
+         FROM invoice WHERE venue_id=$1 ORDER BY period_start DESC`,
+      [venue.id],
+    ),
+  ]);
+  const sub = subscriptionFor(venue.plan, venue.trial_ends_at, end, prices);
+  const onTrial = venue.plan === "trial" || (venue.trial_ends_at && new Date(venue.trial_ends_at) > new Date());
+  return (
+    <>
+      <div className="stat-row">
+        <div className="stat"><b>{venue.plan === "trial" ? "Trial" : PLAN[venue.plan]}</b><span>{onTrial && venue.trial_ends_at ? `Free until ${when(venue.trial_ends_at)}` : "Current plan"}</span></div>
+        <div className="stat"><b>{usage.n}</b><span>Playbook bookings this month</span></div>
+        <div className="stat"><b>{peso(usage.fees + sub)}</b><span>This month so far ({peso(sub)} plan + {peso(usage.fees)} booking fees)</span></div>
+      </div>
+      <section className="app-card">
+        <h2>Plan</h2>
+        <p className="hint">You&apos;re billed monthly, after the month ends: your plan price plus a small fee on each booking players make through Playbook. Walk-ins you add yourself are free.</p>
+        <div className="plan-pick">
+          {VENUE_PLANS.map((p) => (
+            <form key={p.id} action={choosePlan} className={`plan-opt ${venue.plan === p.id ? "is-current" : ""}`}>
+              <input type="hidden" name="venue_id" value={venue.id} />
+              <input type="hidden" name="plan" value={p.id} />
+              <h3>{p.name}</h3>
+              <p className="price">{prices[p.id as (typeof PLAN_IDS)[number]] > 0 ? `${peso(prices[p.id as (typeof PLAN_IDS)[number]])}/month` : "Price to be announced"}</p>
+              <p className="hint">{p.summary}</p>
+              <ul className="plain-list">{p.benefits.map((b) => <li key={b}>✓ {b}</li>)}</ul>
+              {venue.plan === p.id ? <span className="badge badge-ok">Current plan</span> : <button className="btn btn-sm" type="submit">Choose {p.name}</button>}
+            </form>
+          ))}
+        </div>
+      </section>
+      <section className="app-card">
+        <h2>Invoices</h2>
+        {invoices.length === 0 ? <p className="hint">No invoices yet.</p> : (
+          <div className="table-wrap">
+            <table className="data-table">
+              <thead><tr><th scope="col">Invoice</th><th scope="col">Period</th><th scope="col">Total</th><th scope="col">Status</th></tr></thead>
+              <tbody>
+                {invoices.map((i) => (
+                  <tr key={i.id}>
+                    <td><Link href={`/venue/${venue.id}/invoice/${i.id}`}>{i.number}</Link></td>
+                    <td>{i.period}</td>
+                    <td>{peso(i.total_cents)}</td>
+                    <td><span className={`badge ${i.status === "paid" ? "badge-ok" : i.overdue ? "badge-bad" : i.status === "open" ? "badge-warn" : "badge-muted"}`}>{i.overdue ? "overdue" : i.status}</span>{i.status === "open" && <span className="hint"> · due {i.due_date}</span>}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
     </>
   );
 }

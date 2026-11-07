@@ -90,32 +90,57 @@ export function InviteArt() {
 }
 
 export function LibraryArt() {
-  // Pickleball court thumbnail: blue court, green surround, kitchen lines either side of the net.
+  // Real frames from the demo clips (public/assets/video/*-poster.jpg).
+  const side: [string, string, string][] = [
+    ["basketball", "Block at the rim", "0:05"],
+    ["billiards", "Corner cut shot", "0:03"],
+    ["padel", "Lob and smash", "0:08"],
+  ];
+  const poster = (n: string) => `/assets/video/highlight-${n}-poster.jpg`;
   return (
     <Svg label="Pickleball clip thumbnail and personal highlight library">
-      <rect x="20" y="20" width="176" height="104" rx="8" fill="#3c6b4a" />
-      <rect x="32" y="32" width="152" height="80" fill="#2f63a8" />
-      <g stroke={C.white} strokeOpacity="0.85" fill="none" strokeWidth="1.5">
-        <rect x="32" y="32" width="152" height="80" />
-        <line x1="83" y1="32" x2="83" y2="112" />
-        <line x1="133" y1="32" x2="133" y2="112" />
-        <line x1="32" y1="72" x2="83" y2="72" />
-        <line x1="133" y1="72" x2="184" y2="72" />
-      </g>
-      <line x1="108" y1="28" x2="108" y2="116" stroke="#0b100d" strokeWidth="3" />
-      <circle cx="146" cy="52" r="5" fill="#E8F24A" />
-      <path d="M58 96 C 80 60, 112 44, 146 52" stroke={C.lime} strokeWidth="2" strokeDasharray="2 5" fill="none" />
+      <defs>
+        <clipPath id="lib-main"><rect x="20" y="20" width="176" height="104" rx="8" /></clipPath>
+        {side.map((_, i) => (
+          <clipPath key={i} id={`lib-side-${i}`}><rect x="210" y={20 + i * 56} width="90" height="48" rx="6" /></clipPath>
+        ))}
+        <linearGradient id="lib-fade" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0.35" stopColor="#000" stopOpacity="0" />
+          <stop offset="1" stopColor="#000" stopOpacity="0.85" />
+        </linearGradient>
+      </defs>
+      {/* main clip */}
+      <rect x="20" y="20" width="176" height="104" rx="8" fill={C.panel} />
+      <image href={poster("pickleball")} x="20" y="20" width="176" height="104" preserveAspectRatio="xMidYMid slice" clipPath="url(#lib-main)" />
+      <rect x="20" y="20" width="176" height="104" rx="8" fill="none" stroke={C.lime} strokeWidth="1.5" />
+      <rect x="28" y="28" width="54" height="13" rx="6.5" fill={C.bg} fillOpacity="0.75" />
+      <text x="55" y="37.5" fill={C.lime} textAnchor="middle" style={{ ...font, fontSize: 7, fontWeight: 700, letterSpacing: 0.6 }}>DEMO CLIP</text>
+      <circle cx="108" cy="72" r="15" fill={C.bg} fillOpacity="0.55" stroke={C.white} strokeOpacity="0.8" />
+      <path d="M103 64 L116 72 L103 80 Z" fill={C.white} />
+      <rect x="160" y="106" width="28" height="12" rx="3" fill={C.bg} fillOpacity="0.75" />
+      <text x="174" y="115" fill={C.white} textAnchor="middle" style={{ ...font, fontSize: 8, fontWeight: 700 }}>0:05</text>
+      {/* scrubber with clip markers and playhead */}
       <rect x="20" y="134" width="176" height="6" rx="3" fill={C.dim} />
+      <rect x="20" y="134" width="70" height="6" rx="3" fill={C.lime} fillOpacity="0.35" />
       <rect x="60" y="134" width="22" height="6" rx="3" fill={C.lime} />
       <rect x="120" y="134" width="14" height="6" rx="3" fill={C.lime} />
+      <rect x="89" y="131" width="2.5" height="12" rx="1" fill={C.orange} />
       <text x="20" y="160" fill={C.white} style={{ ...font, fontWeight: 700 }}>Doubles rally at the net</text>
       <text x="20" y="176" fill={C.mute} style={font}>0:05 · Pickleball Court 1 · Demo clip</text>
-      {[0, 1, 2].map((i) => (
-        <g key={i} transform={`translate(210 ${20 + i * 56})`}>
-          <rect width="90" height="48" rx="6" fill={i === 1 ? "#1f6b45" : i === 2 ? "#2a5aa8" : "#6b4a2b"} />
-          <text x="6" y="42" fill={C.white} style={{ ...font, fontSize: 9 }}>{["Block at the rim", "Cut shot to the corner", "Lob and smash"][i]}</text>
-        </g>
-      ))}
+      {/* library */}
+      {side.map(([n, title, len], i) => {
+        const y = 20 + i * 56;
+        return (
+          <g key={n}>
+            <rect x="210" y={y} width="90" height="48" rx="6" fill={C.panel} />
+            <image href={poster(n)} x="210" y={y} width="90" height="48" preserveAspectRatio="xMidYMid slice" clipPath={`url(#lib-side-${i})`} />
+            <rect x="210" y={y} width="90" height="48" rx="6" fill="url(#lib-fade)" />
+            <text x="216" y={y + 42} fill={C.white} style={{ ...font, fontSize: 8, fontWeight: 700 }}>{title}</text>
+            <rect x="276" y={y + 5} width="19" height="10" rx="2.5" fill={C.bg} fillOpacity="0.75" />
+            <text x="285.5" y={y + 12.5} fill={C.white} textAnchor="middle" style={{ ...font, fontSize: 6.5, fontWeight: 700 }}>{len}</text>
+          </g>
+        );
+      })}
     </Svg>
   );
 }

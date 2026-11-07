@@ -1,8 +1,11 @@
 "use client";
-// Honest highlight preview: a procedural top-down animation, clearly captioned
-// as a demo animation (not real footage). Plays only when the user presses
-// play. No sound, no autoplay. Swap for a real <video> with signed URLs later.
-import { useEffect, useRef, useState } from "react";
+// Highlight players. `ClipPlayer` plays a demo video clip (AI-generated,
+// captioned as such) and falls back to `HighlightPlayer`, a procedural
+// top-down animation, when there is no video or it fails to load.
+// Both play only when the user presses play: no sound, no autoplay.
+// In production the video src would be a short-lived signed URL.
+import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
+import { clipTime, type Highlight } from "@/content/highlights";
 import type { ClipKind } from "@/lib/booking/types";
 
 const DURATION = 6; // seconds of animation per clip
@@ -193,6 +196,160 @@ export function HighlightPlayer({ kind, title, length }: { kind: ClipKind; title
         <span className="t num">{fmt(secs)} / {fmt(length)}</span>
       </div>
       <figcaption className="caption-note">Demo animation — not real footage. No sound.</figcaption>
+    </figure>
+  );
+}
+
+/** Real video clip with the same player chrome; falls back to the animation. */
+export function ClipPlayer({ clip }: { clip: Highlight }) {
+  const [failed, setFailed] = useState<string | null>(null);
+  if (!clip.video || failed === clip.id) {
+    return <HighlightPlayer kind={clip.kind} title={clip.title} length={Math.round(clip.seconds)} />;
+  }
+  return <VideoClip key={clip.id} clip={clip} onFail={() => setFailed(clip.id)} />;
+}
+
+function VideoClip({ clip, onFail }: { clip: Highlight; onFail: () => void }) {
+  const video = useRef<HTMLVideoElement>(null);
+  const frame = useRef<HTMLElement>(null);
+  const [playing, setPlaying] = useState(false);
+  const [t, setT] = useState(0);
+  const [dur, setDur] = useState(clip.seconds);
+
+  // Keep the readout and playhead in sync while playing.
+  useEffect(() => {
+    const v = video.current;
+    if (!v) return;
+    let raf = 0;
+    const tick = () => {
+      setT(v.currentTime);
+      if (!v.paused) raf = requestAnimationFrame(tick);
+    };
+    const onPlay = () => {
+      setPlaying(true);
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(tick);
+    };
+    const onStop = () => {
+      setPlaying(false);
+      cancelAnimationFrame(raf);
+      setT(v.currentTime);
+    };
+    const onMeta = () => {
+      if (Number.isFinite(v.duration) && v.duration > 0) setDur(v.duration);
+    };
+    const onSeek = () => setT(v.currentTime);
+    v.addEventListener("play", onPlay);
+    v.addEventListener("pause", onStop);
+    v.addEventListener("ended", onStop);
+    v.addEventListener("loadedmetadata", onMeta);
+    v.addEventListener("seeked", onSeek);
+    return () => {
+      cancelAnimationFrame(raf);
+      v.removeEventListener("play", onPlay);
+      v.removeEventListener("pause", onStop);
+      v.removeEventListener("ended", onStop);
+      v.removeEventListener("loadedmetadata", onMeta);
+      v.removeEventListener("seeked", onSeek);
+    };
+  }, []);
+
+  // Pause when the player scrolls out of view.
+  useEffect(() => {
+    const el = frame.current;
+    const v = video.current;
+    if (!el || !v || typeof IntersectionObserver === "undefined") return;
+    const io = new IntersectionObserver(([e]) => {
+      if (!e.isIntersecting && !v.paused) v.pause();
+    }, { threshold: 0.15 });
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
+
+  const toggle = () => {
+    const v = video.current;
+    if (!v) return;
+    if (v.paused) {
+      if (v.ended) v.currentTime = 0;
+      v.play().catch((err: unknown) => {
+        // NotAllowedError/AbortError are transient; anything else means the file is unusable.
+        if (!(err instanceof DOMException) || (err.name !== "NotAllowedError" && err.name !== "AbortError")) onFail();
+      });
+    } else {
+      v.pause();
+    }
+  };
+  const seekTo = (sec: number) => {
+    const v = video.current;
+    if (!v) return;
+    const s = Math.min(Math.max(0, sec), dur);
+    v.currentTime = s;
+    setT(s);
+  };
+  const onPointer = (e: PointerEvent<HTMLDivElement>) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    seekTo(((e.clientX - r.left) / r.width) * dur);
+  };
+  const onKey = (e: KeyboardEvent<HTMLDivElement>) => {
+    const step = { ArrowLeft: -1, ArrowDown: -1, ArrowRight: 1, ArrowUp: 1 }[e.key];
+    if (step) {
+      e.preventDefault();
+      seekTo(t + step);
+    } else if (e.key === "Home" || e.key === "End") {
+      e.preventDefault();
+      seekTo(e.key === "Home" ? 0 : dur);
+    }
+  };
+  const p = dur > 0 ? Math.min(1, t / dur) : 0;
+
+  return (
+    <figure ref={frame} className="player-frame" style={{ margin: 0 }}>
+      <div className="player-media">
+        <video
+          ref={video}
+          src={clip.video}
+          poster={clip.poster}
+          preload="none"
+          muted
+          playsInline
+          disablePictureInPicture
+          aria-label={`Demo clip: ${clip.title}`}
+          onClick={toggle}
+          onError={onFail}
+        />
+        <span className="player-chip" aria-hidden="true">Demo clip</span>
+        {!playing && (
+          <button type="button" className="player-big-play" onClick={toggle} tabIndex={-1} aria-hidden="true">
+            <svg width="28" height="28" viewBox="0 0 16 16"><path d="M4 2l10 6-10 6z" fill="currentColor" /></svg>
+          </button>
+        )}
+      </div>
+      <div className="player-bar">
+        <button className="play-btn" type="button" onClick={toggle} aria-label={playing ? `Pause ${clip.title}` : `Play ${clip.title}`}>
+          {playing ? (
+            <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><rect x="3" y="2" width="3.5" height="12" fill="currentColor" /><rect x="9.5" y="2" width="3.5" height="12" fill="currentColor" /></svg>
+          ) : (
+            <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2l10 6-10 6z" fill="currentColor" /></svg>
+          )}
+        </button>
+        <div
+          className="timeline seekable"
+          role="slider"
+          tabIndex={0}
+          aria-label={`Seek ${clip.title}`}
+          aria-valuemin={0}
+          aria-valuemax={Math.floor(dur)}
+          aria-valuenow={Math.floor(t)}
+          aria-valuetext={`${clipTime(t)} of ${clipTime(dur)}`}
+          onPointerDown={onPointer}
+          onKeyDown={onKey}
+        >
+          <div className="fill" style={{ width: `${p * 100}%` }} />
+          <div className="head" style={{ left: `${p * 100}%` }} />
+        </div>
+        <span className="t num">{clipTime(t)} / {clipTime(dur)}</span>
+      </div>
+      <figcaption className="caption-note">Demo clip — AI-generated video, not real footage. No sound.</figcaption>
     </figure>
   );
 }

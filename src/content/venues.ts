@@ -112,6 +112,25 @@ export const VENUES: Venue[] = [
       { id: "bibs", label: "Bibs set", price: 100, sports: ["futsal", "volleyball"] },
     ],
     resources: [
+      // Pickleball first: the most-played sport at our target venues.
+      {
+        id: "rally-pb1", venueId: "rally", name: "Pickleball Court 1", kind: "court",
+        sports: ["pickleball"], indoor: true, surface: "Acrylic hard court", capacity: 4,
+        hourlyRate: 500, incrementMin: 30, minDurationMin: 60, maxDurationMin: 120,
+        bufferMin: 0, recordingCapable: true,
+      },
+      {
+        id: "rally-pb2", venueId: "rally", name: "Pickleball Court 2", kind: "court",
+        sports: ["pickleball"], indoor: true, surface: "Acrylic hard court", capacity: 4,
+        hourlyRate: 500, incrementMin: 30, minDurationMin: 60, maxDurationMin: 120,
+        bufferMin: 0, recordingCapable: true,
+      },
+      {
+        id: "rally-pb3", venueId: "rally", name: "Pickleball Court 3", kind: "court",
+        sports: ["pickleball"], indoor: true, surface: "Acrylic hard court", capacity: 4,
+        hourlyRate: 450, incrementMin: 30, minDurationMin: 60, maxDurationMin: 120,
+        bufferMin: 0, recordingCapable: false,
+      },
       {
         id: "rally-bd1", venueId: "rally", name: "Badminton Court 1", kind: "court",
         sports: ["badminton"], indoor: true, surface: "Synthetic mat", capacity: 4,
@@ -123,12 +142,6 @@ export const VENUES: Venue[] = [
         sports: ["badminton"], indoor: true, surface: "Synthetic mat", capacity: 4,
         hourlyRate: 400, incrementMin: 60, minDurationMin: 60, maxDurationMin: 120,
         bufferMin: 0, recordingCapable: false,
-      },
-      {
-        id: "rally-pb1", venueId: "rally", name: "Pickleball Court 1", kind: "court",
-        sports: ["pickleball"], indoor: true, surface: "Acrylic hard court", capacity: 4,
-        hourlyRate: 500, incrementMin: 30, minDurationMin: 60, maxDurationMin: 120,
-        bufferMin: 0, recordingCapable: true,
       },
       {
         id: "rally-tt1", venueId: "rally", name: "Table Tennis Table 1", kind: "table",
@@ -165,6 +178,10 @@ export const EVENTS: EventSession[] = [
   {
     id: "ev-pb-open", sportId: "pickleball", venueId: "rally", title: "Open play doubles",
     dayOffset: 1, startMin: 18 * 60, endMin: 20 * 60, feePerPlayer: 250, spots: 16, level: "All levels",
+  },
+  {
+    id: "ev-pb-clinic", sportId: "pickleball", venueId: "rally", title: "Intro to pickleball clinic",
+    dayOffset: 2, startMin: 9 * 60, endMin: 11 * 60, feePerPlayer: 350, spots: 12, level: "Beginner",
   },
   {
     id: "ev-st-intro", sportId: "sepak-takraw", venueId: "rally", title: "Sepak takraw intro session",

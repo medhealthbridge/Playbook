@@ -22,8 +22,8 @@ export const ASSETS = {
   bench: "/assets/models/team_bench.glb",
   lightBeam: "/assets/fx/light_beam.png",
   dust: "/assets/fx/dust_particles.png",
-  arenaVideo: ["/assets/video/demo_arena_ambient.webm", "/assets/video/demo_arena_ambient.mp4"],
-  arenaPoster: "/assets/video/demo_arena_ambient_poster.jpg",
+  arenaVideo: "/assets/video/ambient-arena.mp4",
+  arenaPoster: "/assets/video/ambient-arena-poster.jpg",
 } as const;
 
 export type PBRName =
@@ -382,7 +382,18 @@ export function DribbleBall({ position, r = 0.3, shadows }: { position: [number,
 }
 
 /** Silent looping arena video, played only while it can be seen. */
-export function useArenaVideo(isVisible: () => boolean) {
+export interface LoopVideo {
+  texture: THREE.VideoTexture;
+  ready: () => boolean;
+  /** playback position, 0..1 */
+  progress: () => number;
+}
+
+/**
+ * Muted looping video as a texture. Loads nothing until first shown, plays
+ * only while `isVisible()` is true, and pauses otherwise.
+ */
+export function useLoopVideo(src: string, poster: string, isVisible: () => boolean): LoopVideo {
   const video = useMemo(() => {
     const v = document.createElement("video");
     v.muted = true;
@@ -390,15 +401,10 @@ export function useArenaVideo(isVisible: () => boolean) {
     v.playsInline = true;
     v.preload = "none";
     v.crossOrigin = "anonymous";
-    v.poster = ASSETS.arenaPoster;
-    for (const src of ASSETS.arenaVideo) {
-      const s = document.createElement("source");
-      s.src = src;
-      s.type = src.endsWith(".webm") ? "video/webm" : "video/mp4";
-      v.appendChild(s);
-    }
+    v.poster = poster;
+    v.src = src;
     return v;
-  }, []);
+  }, [src, poster]);
   const texture = useMemo(() => {
     const t = new THREE.VideoTexture(video);
     t.colorSpace = THREE.SRGBColorSpace;
@@ -413,11 +419,24 @@ export function useArenaVideo(isVisible: () => boolean) {
     () => () => {
       video.pause();
       video.removeAttribute("src");
+      video.load();
       texture.dispose();
     },
     [video, texture],
   );
-  return { texture, ready: () => video.readyState >= 2 };
+  return useMemo(
+    () => ({
+      texture,
+      ready: () => video.readyState >= 2,
+      progress: () => (video.duration > 0 ? video.currentTime / video.duration : 0),
+    }),
+    [video, texture],
+  );
+}
+
+/** The giant REPLAY screen's ambient arena loop. */
+export function useArenaVideo(isVisible: () => boolean) {
+  return useLoopVideo(ASSETS.arenaVideo, ASSETS.arenaPoster, isVisible);
 }
 
 /** Bloom on the brightest emissives (lights, lime lines) — desktop only. */

@@ -9,15 +9,23 @@ export interface Sport {
   featured?: boolean;
 }
 
-// Order = display order. Basketball is the launch priority (not a market claim).
+// Order = display order. Pickleball leads: per the product owner it is the
+// most-played sport at our target venues (the likeliest buyers). Basketball follows.
 export const SPORTS: Sport[] = [
+  {
+    id: "pickleball",
+    name: "Pickleball",
+    tagline: "Your next doubles game starts here.",
+    visual: "Paddle and perforated ball beside the non-volley kitchen line",
+    resourceNoun: "court",
+    featured: true,
+  },
   {
     id: "basketball",
     name: "Basketball",
     tagline: "Get the squad on court.",
     visual: "Basketball resting on hardwood beside the free-throw lane and hoop",
     resourceNoun: "court",
-    featured: true,
   },
   {
     id: "billiards",
@@ -38,13 +46,6 @@ export const SPORTS: Sport[] = [
     name: "Badminton",
     tagline: "Make time for your next rally.",
     visual: "Shuttlecock and racket over doubles court markings",
-    resourceNoun: "court",
-  },
-  {
-    id: "pickleball",
-    name: "Pickleball",
-    tagline: "Your next doubles game starts here.",
-    visual: "Paddle and perforated ball beside the non-volley kitchen line",
     resourceNoun: "court",
   },
   {

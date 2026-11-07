@@ -90,25 +90,30 @@ export function InviteArt() {
 }
 
 export function LibraryArt() {
+  // Pickleball court thumbnail: blue court, green surround, kitchen lines either side of the net.
   return (
-    <Svg label="Clip thumbnail and personal highlight library">
-      <rect x="20" y="20" width="176" height="104" rx="8" fill="#6b4a2b" />
-      <g stroke={C.white} strokeOpacity="0.7" fill="none" strokeWidth="1.5">
-        <rect x="30" y="30" width="156" height="84" />
-        <line x1="108" y1="30" x2="108" y2="114" />
-        <circle cx="108" cy="72" r="14" />
+    <Svg label="Pickleball clip thumbnail and personal highlight library">
+      <rect x="20" y="20" width="176" height="104" rx="8" fill="#3c6b4a" />
+      <rect x="32" y="32" width="152" height="80" fill="#2f63a8" />
+      <g stroke={C.white} strokeOpacity="0.85" fill="none" strokeWidth="1.5">
+        <rect x="32" y="32" width="152" height="80" />
+        <line x1="83" y1="32" x2="83" y2="112" />
+        <line x1="133" y1="32" x2="133" y2="112" />
+        <line x1="32" y1="72" x2="83" y2="72" />
+        <line x1="133" y1="72" x2="184" y2="72" />
       </g>
-      <circle cx="150" cy="58" r="8" fill="#E2702F" />
-      <path d="M60 100 C 90 60, 120 50, 146 58" stroke={C.lime} strokeWidth="2" strokeDasharray="2 5" fill="none" />
+      <line x1="108" y1="28" x2="108" y2="116" stroke="#0b100d" strokeWidth="3" />
+      <circle cx="146" cy="52" r="5" fill="#E8F24A" />
+      <path d="M58 96 C 80 60, 112 44, 146 52" stroke={C.lime} strokeWidth="2" strokeDasharray="2 5" fill="none" />
       <rect x="20" y="134" width="176" height="6" rx="3" fill={C.dim} />
       <rect x="60" y="134" width="22" height="6" rx="3" fill={C.lime} />
       <rect x="120" y="134" width="14" height="6" rx="3" fill={C.lime} />
-      <text x="20" y="160" fill={C.white} style={{ ...font, fontWeight: 700 }}>Fast break and-one</text>
-      <text x="20" y="176" fill={C.mute} style={font}>0:18 · Court A · Demo clip</text>
+      <text x="20" y="160" fill={C.white} style={{ ...font, fontWeight: 700 }}>Doubles rally at the net</text>
+      <text x="20" y="176" fill={C.mute} style={font}>0:05 · Pickleball Court 1 · Demo clip</text>
       {[0, 1, 2].map((i) => (
         <g key={i} transform={`translate(210 ${20 + i * 56})`}>
-          <rect width="90" height="48" rx="6" fill={i === 1 ? "#1f6b45" : i === 2 ? "#2a5aa8" : C.dim} />
-          <text x="6" y="42" fill={C.white} style={{ ...font, fontSize: 9 }}>{["Corner three", "Bank shot", "Long rally"][i]}</text>
+          <rect width="90" height="48" rx="6" fill={i === 1 ? "#1f6b45" : i === 2 ? "#2a5aa8" : "#6b4a2b"} />
+          <text x="6" y="42" fill={C.white} style={{ ...font, fontSize: 9 }}>{["Block at the rim", "Cut shot to the corner", "Lob and smash"][i]}</text>
         </g>
       ))}
     </Svg>

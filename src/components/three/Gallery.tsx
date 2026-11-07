@@ -8,6 +8,7 @@ import { useFrame, useLoader } from "@react-three/fiber";
 import { useMemo, useRef } from "react";
 import * as THREE from "three";
 import type { SportId } from "@/lib/booking/types";
+import type { LoopVideo } from "./Realism";
 import { canvasTexture, fonts } from "./textures";
 
 type V = [number, number, number];
@@ -18,19 +19,23 @@ export interface Clip {
   length: string;
   /** vertical crop centre in the square photo, 0 = bottom, 1 = top */
   focusY: number;
+  /** demo video for this screen (plays on the featured screen while in view) */
+  video?: string;
 }
 
+// Pickleball leads (featured screen). The first four titles match the real
+// demo clips in src/content/highlights.ts; the rest are placeholder titles.
 export const GALLERY_CLIPS: Clip[] = [
-  { sport: "basketball", title: "Fast break and-one", length: "0:18", focusY: 0.55 },
-  { sport: "padel", title: "Twenty-shot rally", length: "0:32", focusY: 0.45 },
-  { sport: "billiards", title: "Bank shot to win the rack", length: "0:12", focusY: 0.42 },
-  { sport: "volleyball", title: "Spike at the net", length: "0:09", focusY: 0.38 },
+  { sport: "pickleball", title: "Doubles rally at the net", length: "0:05", focusY: 0.34, video: "/assets/video/highlight-pickleball.mp4" },
+  { sport: "basketball", title: "Block at the rim", length: "0:05", focusY: 0.55 },
+  { sport: "padel", title: "Lob-and-smash finish", length: "0:08", focusY: 0.45 },
+  { sport: "billiards", title: "Cut shot to the corner", length: "0:03", focusY: 0.42 },
+  { sport: "volleyball", title: "Set-and-spike winner", length: "0:09", focusY: 0.38 },
   { sport: "futsal", title: "Through-ball finish", length: "0:14", focusY: 0.45 },
-  { sport: "pickleball", title: "Kitchen battle", length: "0:21", focusY: 0.34 },
-  { sport: "badminton", title: "Jump smash", length: "0:07", focusY: 0.36 },
+  { sport: "badminton", title: "Jump-smash winner", length: "0:07", focusY: 0.36 },
   { sport: "tennis", title: "Ace down the T", length: "0:06", focusY: 0.38 },
-  { sport: "table-tennis", title: "Backhand flick", length: "0:05", focusY: 0.36 },
-  { sport: "sepak-takraw", title: "Roll spike", length: "0:08", focusY: 0.45 },
+  { sport: "table-tennis", title: "Backhand-flick winner", length: "0:05", focusY: 0.36 },
+  { sport: "sepak-takraw", title: "Roll-spike winner", length: "0:08", focusY: 0.45 },
 ];
 
 const ASPECT = 9 / 16;
@@ -62,7 +67,7 @@ export function cropTo169(tex: THREE.Texture, focusY: number, zoom = 1, panX = 0
   tex.offset.set(ox, oy);
 }
 
-function overlayTexture(c: Clip) {
+function overlayTexture(c: Clip, live = false) {
   return canvasTexture(1024, 576, (ctx, w, h) => {
     ctx.clearRect(0, 0, w, h);
     // bottom scrim
@@ -83,21 +88,23 @@ function overlayTexture(c: Clip) {
     ctx.fillStyle = "#F5F7F0";
     ctx.font = `700 24px ${fonts().body}`;
     ctx.fillText("REPLAY", 76, 59);
-    // centre play button
-    ctx.fillStyle = "rgba(245,247,240,0.16)";
-    ctx.beginPath();
-    ctx.arc(w / 2, h * 0.45, 52, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = "rgba(245,247,240,0.7)";
-    ctx.lineWidth = 3;
-    ctx.stroke();
-    ctx.fillStyle = "#F5F7F0";
-    ctx.beginPath();
-    ctx.moveTo(w / 2 - 14, h * 0.45 - 22);
-    ctx.lineTo(w / 2 + 24, h * 0.45);
-    ctx.lineTo(w / 2 - 14, h * 0.45 + 22);
-    ctx.closePath();
-    ctx.fill();
+    // centre play button (omitted on screens that play real video)
+    if (!live) {
+      ctx.fillStyle = "rgba(245,247,240,0.16)";
+      ctx.beginPath();
+      ctx.arc(w / 2, h * 0.45, 52, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "rgba(245,247,240,0.7)";
+      ctx.lineWidth = 3;
+      ctx.stroke();
+      ctx.fillStyle = "#F5F7F0";
+      ctx.beginPath();
+      ctx.moveTo(w / 2 - 14, h * 0.45 - 22);
+      ctx.lineTo(w / 2 + 24, h * 0.45);
+      ctx.lineTo(w / 2 - 14, h * 0.45 + 22);
+      ctx.closePath();
+      ctx.fill();
+    }
     // title + meta
     ctx.fillStyle = "#F5F7F0";
     ctx.font = `800 58px ${fonts().display}`;
@@ -143,6 +150,7 @@ export function HighlightScreen({
   mirror = false,
   phase = 0,
   dim = 1,
+  video,
 }: {
   clip: Clip;
   photo: THREE.Texture;
@@ -153,26 +161,41 @@ export function HighlightScreen({
   mirror?: boolean;
   phase?: number;
   dim?: number;
+  /** live clip texture; replaces the photo once frames are available */
+  video?: LoopVideo;
 }) {
   const h = width * ASPECT;
-  const overlay = useMemo(() => overlayTexture(clip), [clip]);
+  const live = !!video;
+  const overlay = useMemo(() => overlayTexture(clip, live), [clip, live]);
   const progress = useRef<THREE.Mesh>(null);
   const progressMirror = useRef<THREE.Mesh>(null);
   const tint = useMemo(() => new THREE.Color(dim, dim, dim), [dim]);
   const barW = width * (1 - 72 / 1024);
+  const screen = useRef<THREE.MeshBasicMaterial>(null);
+  const screenMirror = useRef<THREE.MeshBasicMaterial>(null);
   useFrame(({ clock }) => {
     const t = clock.elapsedTime + phase * 7;
-    // slow pan/zoom: reads as footage playing
-    const z = 1.06 + 0.06 * Math.sin(t * 0.12);
-    cropTo169(photo, clip.focusY, z, 0.025 * Math.sin(t * 0.09), 0.015 * Math.cos(t * 0.11));
-    const p = (t * 0.06) % 1;
+    const live = !!video && video.ready();
+    const map = live ? video.texture : photo;
+    for (const m of [screen.current, screenMirror.current]) {
+      if (m && m.map !== map) {
+        m.map = map;
+        m.needsUpdate = true;
+      }
+    }
+    // slow pan/zoom on the still photo: reads as footage playing
+    if (!live) {
+      const z = 1.06 + 0.06 * Math.sin(t * 0.12);
+      cropTo169(photo, clip.focusY, z, 0.025 * Math.sin(t * 0.09), 0.015 * Math.cos(t * 0.11));
+    }
+    const p = live ? video.progress() : (t * 0.06) % 1;
     for (const m of [progress.current, progressMirror.current]) {
       if (!m) continue;
       m.scale.x = Math.max(0.001, p);
       m.position.x = -barW / 2 + (barW * p) / 2;
     }
   });
-  const body = (progressRef: React.RefObject<THREE.Mesh | null>, withHalo: boolean) => (
+  const body = (progressRef: React.RefObject<THREE.Mesh | null>, screenRef: React.RefObject<THREE.MeshBasicMaterial | null>, withHalo: boolean) => (
     <>
       {/* soft light halo behind the panel (skipped on mirrored copies to save fill-rate) */}
       {withHalo && (
@@ -194,7 +217,7 @@ export function HighlightScreen({
       </mesh>
       <mesh>
         <planeGeometry args={[width, h]} />
-        <meshBasicMaterial map={photo} color={tint} toneMapped={false} side={THREE.DoubleSide} />
+        <meshBasicMaterial ref={screenRef} map={photo} color={tint} toneMapped={false} side={THREE.DoubleSide} />
       </mesh>
       <mesh position={[0, 0, 0.004]}>
         <planeGeometry args={[width, h]} />
@@ -214,11 +237,11 @@ export function HighlightScreen({
   return (
     <>
       <group position={position} rotation={[0, rotY, 0]}>
-        {body(progress, true)}
+        {body(progress, screen, true)}
       </group>
       {mirror && (
         <group position={[position[0], -position[1], position[2]]} rotation={[0, rotY, 0]} scale={[1, -1, 1]}>
-          {body(progressMirror, false)}
+          {body(progressMirror, screenMirror, false)}
         </group>
       )}
     </>

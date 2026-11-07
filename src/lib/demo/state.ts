@@ -161,13 +161,18 @@ export function seedState(now = Date.now()): DemoState {
     { id: "p-ana", name: "Ana", role: "invitee", status: "invited", recordingAccess: false },
   );
   rec(p1, "ready", "cctv_export", [
-    ["Fast break and-one", "basketball", 1260, 1278],
+    ["Block at the rim", "basketball", 1260, 1266],
     ["Corner three to close Q2", "basketball", 2405, 2418],
-    ["Block at the rim", "basketball", 4102, 4112],
+    ["Fast-break layup", "basketball", 4102, 4110],
   ]);
-  rec(mine("rally-pd1", "padel", -6, 18, 1), "ready", "camera_upload", [["Twenty-shot rally", "rally", 1880, 1912]]);
+  const pb = mine("rally-pb1", "pickleball", -1, 19, 1);
+  rec(pb, "ready", "camera_upload", [
+    ["Doubles rally at the net", "rally", 1520, 1525],
+    ["Twelve-dink kitchen rally", "rally", 2210, 2231],
+  ]);
+  rec(mine("rally-pd1", "padel", -6, 18, 1), "ready", "camera_upload", [["Lob-and-smash finish", "rally", 1880, 1888]]);
   rec(mine("rally-bd1", "badminton", -3, 18, 1), "processing", "camera_upload");
-  rec(mine("rally-pb1", "pickleball", -1, 9, 1), "awaiting_upload", "cctv_export");
+  rec(mine("rally-pb2", "pickleball", -1, 9, 1), "awaiting_upload", "cctv_export");
   rec(mine("rally-fs1", "futsal", -5, 20, 1), "failed", "cctv_export");
   rec(mine("kalye-a", "volleyball", -40, 17, 2), "expired", "cctv_export");
   mine("cue-t1", "billiards", -4, 15, 2); // venue on Manage plan -> no video
@@ -228,7 +233,8 @@ export function seedState(now = Date.now()): DemoState {
     maintenance,
     recordings,
     notifications: [
-      { id: uid("n"), at: now - 3_600_000, text: "Your clip “Fast break and-one” is ready.", read: false, bookingId: p1.id },
+      { id: uid("n"), at: now - 1_800_000, text: "Your clip “Doubles rally at the net” is ready.", read: false, bookingId: pb.id },
+      { id: uid("n"), at: now - 3_600_000, text: "Your clip “Block at the rim” is ready.", read: false, bookingId: p1.id },
     ],
     eventRegistrations: [],
     processedPaymentEvents: [],

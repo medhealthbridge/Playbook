@@ -70,8 +70,8 @@ export function ReplayCard() {
         <span className="badge badge-demo">Demo data</span>
       </div>
       <div>
-        <div className="title">Fast break and-one</div>
-        <div className="meta">0:18 · Court A · Published by venue staff</div>
+        <div className="title">Block at the rim</div>
+        <div className="meta">0:05 · Court A · Published by venue staff</div>
       </div>
       <div className="timeline" aria-hidden="true" style={{ flex: "none", height: 28 }}>
         <div className="mark" style={{ left: "12%", width: "12%" }} />

@@ -21,6 +21,7 @@ import {
   PostFX,
   ShadowRig,
   useArenaVideo,
+  useLoopVideo,
   usePBR,
 } from "./Realism";
 import { FilmTimeline, GALLERY_CLIPS, HighlightScreen, cropTo169, usePhotoTextures } from "./Gallery";
@@ -709,7 +710,7 @@ function ReplayWorld({ mobile, timeRef }: { mobile: boolean; timeRef: React.Muta
   const face = useMemo(() => new THREE.MeshStandardMaterial({ color: LIME, emissive: LIME, emissiveIntensity: 0.35, roughness: 0.4 }), []);
   const side = useMemo(() => new THREE.MeshStandardMaterial({ color: "#1b231f", roughness: 0.6 }), []);
   const photos = usePhotoTextures(GALLERY_CLIPS);
-  // separate copy of the basketball photo for the gate (the gallery animates its own crop)
+  // separate copy of the lead photo for the gate (the gallery animates its own crop)
   const gatePhoto = useMemo(() => {
     const t = photos[0].clone();
     t.needsUpdate = true;
@@ -719,6 +720,9 @@ function ReplayWorld({ mobile, timeRef }: { mobile: boolean; timeRef: React.Muta
   const screenMat = useRef<THREE.MeshBasicMaterial>(null);
   // The giant screen plays the ambient arena loop while it's in view.
   const video = useArenaVideo(() => timeRef.current > 0.55 && timeRef.current < 0.74);
+  // The featured gallery screen (pickleball) plays its real demo clip while the gallery is in view.
+  const lead = GALLERY_CLIPS[0];
+  const leadVideo = useLoopVideo(lead.video ?? "", `/assets/video/highlight-${lead.sport}-poster.jpg`, () => !!lead.video && timeRef.current > 0.62 && timeRef.current < 0.9);
   useFrame(() => {
     const t = timeRef.current;
     const m = screenMat.current;
@@ -769,7 +773,7 @@ function ReplayWorld({ mobile, timeRef }: { mobile: boolean; timeRef: React.Muta
       <Word word={REPLAY} position={[0, GATE.cy + GATE.h / 2 + 0.5, GATE_Z]} offset={-REPLAY.width / 2} face={face} side={side} />
       {/* gallery corridor of highlight screens */}
       {screens.map((sc, i) => (
-        <HighlightScreen key={i} clip={sc.clip} photo={sc.photo} position={sc.pos} rotY={sc.rotY} featured={i === 0} mirror={mobile} phase={i} />
+        <HighlightScreen key={i} clip={sc.clip} photo={sc.photo} position={sc.pos} rotY={sc.rotY} featured={i === 0} mirror={mobile} phase={i} video={i === 0 && lead.video ? leadVideo : undefined} />
       ))}
       {/* upper-deck screens */}
       {upper.map((u, k) => (

@@ -102,6 +102,13 @@ All programmatically generated content is original procedural output from this t
 | `public/assets/textures/wood_dark_walnut/wood_dark_walnut_basecolor.jpg` | procedural material synthesis | Python, NumPy, Pillow | Self-generated, subject to applicable platform terms; not CC0. |
 | `public/assets/textures/wood_dark_walnut/wood_dark_walnut_normal.png` | procedural material synthesis | Python, NumPy, Pillow | Self-generated, subject to applicable platform terms; not CC0. |
 | `public/assets/textures/wood_dark_walnut/wood_dark_walnut_roughness.jpg` | procedural material synthesis | Python, NumPy, Pillow | Self-generated, subject to applicable platform terms; not CC0. |
-| `public/assets/video/demo_arena_ambient.mp4` | generated arena panorama animation | Python, OpenCV, FFmpeg | Self-generated, subject to applicable platform terms; not CC0. |
-| `public/assets/video/demo_arena_ambient.webm` | generated arena panorama animation | Python, OpenCV, FFmpeg | Self-generated, subject to applicable platform terms; not CC0. |
-| `public/assets/video/demo_arena_ambient_poster.jpg` | generated arena panorama animation | Python, OpenCV, FFmpeg | Self-generated, subject to applicable platform terms; not CC0. |
+| `public/assets/video/ambient-arena.mp4` | AI video (Higgsfield, Kling 3.0); cropped, signage removed, looped | Higgsfield, FFmpeg | Generated on the account holder's Higgsfield plan; subject to Higgsfield's terms; not CC0. |
+| `public/assets/video/ambient-arena-poster.jpg` | frame of ambient-arena.mp4 | Higgsfield, FFmpeg | Generated on the account holder's Higgsfield plan; subject to Higgsfield's terms; not CC0. |
+| `public/assets/video/highlight-pickleball.mp4` | AI video (Higgsfield, Kling 3.0); trimmed, text/logos removed | Higgsfield, FFmpeg | Generated on the account holder's Higgsfield plan; subject to Higgsfield's terms; not CC0. |
+| `public/assets/video/highlight-basketball.mp4` | AI video (Higgsfield, Kling 3.0); trimmed, text/logos removed | Higgsfield, FFmpeg | Generated on the account holder's Higgsfield plan; subject to Higgsfield's terms; not CC0. |
+| `public/assets/video/highlight-padel.mp4` | AI video (Higgsfield, Kling 3.0); trimmed, text/logos removed | Higgsfield, FFmpeg | Generated on the account holder's Higgsfield plan; subject to Higgsfield's terms; not CC0. |
+| `public/assets/video/highlight-billiards.mp4` | AI video (Higgsfield, Kling 3.0); trimmed, text/logos removed | Higgsfield, FFmpeg | Generated on the account holder's Higgsfield plan; subject to Higgsfield's terms; not CC0. |
+| `public/assets/video/highlight-pickleball-poster.jpg` | frame of highlight-pickleball.mp4 | Higgsfield, FFmpeg | Generated on the account holder's Higgsfield plan; subject to Higgsfield's terms; not CC0. |
+| `public/assets/video/highlight-basketball-poster.jpg` | frame of highlight-basketball.mp4 | Higgsfield, FFmpeg | Generated on the account holder's Higgsfield plan; subject to Higgsfield's terms; not CC0. |
+| `public/assets/video/highlight-padel-poster.jpg` | frame of highlight-padel.mp4 | Higgsfield, FFmpeg | Generated on the account holder's Higgsfield plan; subject to Higgsfield's terms; not CC0. |
+| `public/assets/video/highlight-billiards-poster.jpg` | frame of highlight-billiards.mp4 | Higgsfield, FFmpeg | Generated on the account holder's Higgsfield plan; subject to Higgsfield's terms; not CC0. |

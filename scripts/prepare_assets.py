@@ -86,9 +86,10 @@ def main():
         mpath = os.path.join(s, f"{name}_metallic.jpg")
         metal = Image.open(mpath).convert("L").resize(size, Image.LANCZOS) if os.path.exists(mpath) else Image.new("L", size, 0)
         Image.merge("RGB", (ao, rough, metal)).save(os.path.join(d, f"{name}_orm.jpg"), quality=88)
-    # Straight copies
-    for rel in ("models/bleacher_module.glb", "models/team_bench.glb", "fx/light_beam.png", "fx/dust_particles.png",
-                "video/demo_arena_ambient.mp4", "video/demo_arena_ambient.webm", "video/demo_arena_ambient_poster.jpg", "CREDITS.md"):
+    # Straight copies. (The bundle's demo_arena_ambient video was replaced by the
+    # Higgsfield clips in public/assets/video/; CREDITS.md gains rows for them
+    # after this copy, so re-add those rows if you re-run this script.)
+    for rel in ("models/bleacher_module.glb", "models/team_bench.glb", "fx/light_beam.png", "fx/dust_particles.png", "CREDITS.md"):
         os.makedirs(os.path.dirname(os.path.join(OUT, rel)), exist_ok=True)
         shutil.copyfile(os.path.join(SRC, rel), os.path.join(OUT, rel))
 

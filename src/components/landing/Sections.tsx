@@ -3,20 +3,21 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { COPY } from "@/content/copy";
 import { FAQ } from "@/content/faq";
+import { HIGHLIGHTS, clipTime } from "@/content/highlights";
 import { PLAYER_PLANS, PRICE_TBA, VENUE_PLANS, venuePlanById } from "@/content/plans";
 import Image from "next/image";
 import { SPORTS, SPORT_PHOTOS, sportById } from "@/content/sports";
 import { EVENTS, VENUES } from "@/content/venues";
 import { isBlocking } from "@/lib/booking/rules";
 import { addDays, formatDate, formatPHP, formatRange, manilaToday, parseHM } from "@/lib/booking/time";
-import type { ClipKind, SportId } from "@/lib/booking/types";
+import type { SportId } from "@/lib/booking/types";
 import { useDemo } from "@/lib/demo/DemoProvider";
 import { registerEvent, setPlayerPlan, setVenuePlan } from "@/lib/demo/state";
 import { useBooking } from "@/lib/ui/BookingLauncher";
 import { useToast } from "@/lib/ui/Toast";
 import { CalendarArt, InviteArt, LedgerArt, LibraryArt, PriceArt, VenueCalArt } from "../art/FeatureArt";
 import { SportArt } from "../art/SportArt";
-import { HighlightPlayer } from "../media/HighlightPlayer";
+import { ClipPlayer } from "../media/HighlightPlayer";
 
 /* ------------------------------------------------------------ sports */
 export function SportsSection() {
@@ -263,15 +264,9 @@ export function VenueDiscovery() {
 }
 
 /* ------------------------------------------------------------ highlights */
-const LIB: { kind: ClipKind; title: string; meta: string; length: number; sport: SportId }[] = [
-  { kind: "basketball", title: "Fast break and-one", meta: "Court A · Kalye Court Hub", length: 18, sport: "basketball" },
-  { kind: "rally", title: "Twenty-shot rally", meta: "Padel Court 1 · Rally Point", length: 32, sport: "padel" },
-  { kind: "billiards", title: "Bank shot to win the rack", meta: "Table 1 · Cue & Co.", length: 12, sport: "billiards" },
-];
-
 export function HighlightsSection() {
   const [i, setI] = useState(0);
-  const clip = LIB[i];
+  const clip = HIGHLIGHTS[i];
   const states = [
     ["Ready", "badge-ok"], ["Processing", "badge-warn"], ["Awaiting upload", "badge-warn"], ["Not recorded", "badge-muted"],
     ["Restricted by plan", "badge-muted"], ["Failed", "badge-bad"], ["Expired", "badge-muted"],
@@ -287,16 +282,23 @@ export function HighlightsSection() {
           <p>{COPY.highlights.body}</p>
         </div>
         <div className="highlights-grid">
-          <HighlightPlayer kind={clip.kind} title={clip.title} length={clip.length} />
+          <ClipPlayer clip={clip} />
           <div>
             <p className="eyebrow" style={{ marginBottom: 10 }}>Your library · demo</p>
             <div className="library">
-              {LIB.map((c, k) => (
-                <button key={c.title} type="button" className="lib-item" aria-pressed={k === i} onClick={() => setI(k)}>
-                  <span className="thumb"><SportArt sport={c.sport} idSuffix={`-lib${k}`} /></span>
+              {HIGHLIGHTS.map((c, k) => (
+                <button key={c.id} type="button" className="lib-item" aria-pressed={k === i} onClick={() => setI(k)}>
+                  <span className="thumb">
+                    {c.poster ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={c.poster} alt="" loading="lazy" decoding="async" width={160} height={100} />
+                    ) : (
+                      <SportArt sport={c.sport} idSuffix={`-lib${k}`} />
+                    )}
+                  </span>
                   <span>
                     <span className="t" style={{ display: "block" }}>{c.title}</span>
-                    <span className="m">{c.meta} · 0:{String(c.length).padStart(2, "0")}</span>
+                    <span className="m">{sportById(c.sport).name} · {c.meta} · {clipTime(c.seconds)}</span>
                   </span>
                 </button>
               ))}
@@ -331,7 +333,7 @@ export function ForVenuesSection() {
   const span = close - open;
   const rows = useMemo(() => {
     if (!state) return [];
-    return [...venue.resources, ...VENUES[2].resources.slice(0, 2)].map((r) => ({
+    return [...venue.resources, ...VENUES[2].resources.filter((r) => r.sports.includes("pickleball")).slice(0, 2)].map((r) => ({
       r,
       blocks: [
         ...state.bookings.filter((b) => b.resourceId === r.id && b.date === today && isBlocking(b, now)).map((b) => ({ s: b.startMin, e: b.endMin, k: b.status === "held" ? "held" : "confirmed", mine: b.ownerId === "demo-player" })),

@@ -8,7 +8,7 @@ import { useBooking } from "@/lib/ui/BookingLauncher";
 
 export function HeroSearch({ compact = false }: { compact?: boolean }) {
   const { open } = useBooking();
-  const [sport, setSport] = useState<SportId | "">("basketball");
+  const [sport, setSport] = useState<SportId | "">("pickleball");
   const [where, setWhere] = useState("");
   const [date, setDate] = useState("");
   const [err, setErr] = useState<string | null>(null);

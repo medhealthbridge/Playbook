@@ -105,6 +105,15 @@ camera-following soft shadows, bloom on lights and lime lines, light shafts, dri
 and the video screen-gate. Mirror floor, shadows, bloom and light shafts are desktop-only; mobile keeps the
 HDRI + PBR materials. Sources and licences: `public/assets/CREDITS.md`.
 
+`ArenaShell.tsx` adds the acoustic ceiling, steel trusses, high-bay fixtures with halos, scrolling LED ribbon
+boards and side video walls; `Gallery.tsx` builds the REPLAY highlight screens (sport photos with broadcast
+overlays, pan/zoom motion, progress bars) and the film-strip timeline. Phones get mirrored screens and lights
+under a slightly see-through floor instead of the real-time mirror.
+
+Performance guards: camera far plane just past the fog, floor markings and light effects on a main-camera-only
+layer (skipped by the mirror and shadow passes), only hero objects cast shadows, mirror and shadow map refresh
+every other frame, and the render loop pauses off-screen and while the booking dialog is open.
+
 ## Project map
 
 ```

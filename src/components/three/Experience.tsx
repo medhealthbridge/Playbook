@@ -59,7 +59,8 @@ export default function Experience({ onReady, onFail }: { onReady: () => void; o
         shadows={mobile ? false : "soft"}
         frameloop={visible ? "always" : "never"}
         gl={{ antialias: !mobile, powerPreference: "high-performance", alpha: false }}
-        camera={{ fov: 50, near: 0.1, far: 240, position: [0, 2.3, 22] }}
+        // far plane just past the fog: anything beyond is invisible anyway, so skip drawing it
+        camera={{ fov: 50, near: 0.1, far: 96, position: [0, 2.3, 22] }}
         onCreated={({ gl }) => {
           gl.toneMapping = THREE.ACESFilmicToneMapping;
           gl.toneMappingExposure = 1.05;

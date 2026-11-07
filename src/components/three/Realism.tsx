@@ -83,11 +83,20 @@ export function EnvironmentSwitcher() {
     pm.dispose();
     return { arena, ext };
   }, [gl, arenaHdr, extHdr]);
+  const charcoal = useMemo(() => new THREE.Color("#101713"), []);
+  useMemo(() => {
+    extHdr.mapping = THREE.EquirectangularReflectionMapping;
+  }, [extHdr]);
   useFrame(() => {
     const inside = camera.position.z < -19.5;
     const env = inside ? maps.arena : maps.ext;
     if (scene.environment !== env) scene.environment = env;
     scene.environmentIntensity = inside ? 0.38 : 0.3;
+    // blue-hour sky outside; enclosed arena keeps the dark backdrop
+    const bg = inside ? charcoal : extHdr;
+    if (scene.background !== bg) scene.background = bg;
+    scene.backgroundIntensity = 0.55;
+    scene.backgroundBlurriness = 0.02;
   });
   useEffect(() => () => {
     scene.environment = null;
@@ -103,8 +112,10 @@ export function ArenaFloor({ quality }: { quality: "high" | "low" }) {
     () => ({
       clearcoat: 0.8,
       clearcoatRoughness: 0.12,
-      transparent: quality === "high",
-      opacity: quality === "high" ? 0.8 : 1,
+      // low quality has no real mirror, but stays slightly see-through so the
+      // mirrored screens/lights placed under it read as reflections
+      transparent: true,
+      opacity: quality === "high" ? 0.8 : 0.84,
     }),
     [quality],
   );
@@ -121,6 +132,13 @@ export function ArenaFloor({ quality }: { quality: "high" | "low" }) {
     });
     r.rotation.x = -Math.PI / 2;
     r.position.set(0, -0.004, -110);
+    // refresh the reflection every other frame: the camera moves slowly, so a
+    // one-frame-old mirror is invisible but halves the cost of this pass
+    const render = r.onBeforeRender.bind(r);
+    let frame = 0;
+    r.onBeforeRender = (...args: Parameters<typeof render>) => {
+      if (frame++ % 2 === 0) render(...args);
+    };
     return r;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [quality, gl]);
@@ -156,7 +174,18 @@ export function ShadowRig() {
     l.shadow.bias = -0.0004;
     l.shadow.normalBias = 0.03;
   }, [target]);
+  const { gl } = useThree();
+  const frame = useRef(0);
+  useLayoutEffect(() => {
+    gl.shadowMap.autoUpdate = false;
+    gl.shadowMap.needsUpdate = true;
+    return () => {
+      gl.shadowMap.autoUpdate = true;
+    };
+  }, [gl]);
   useFrame(() => {
+    // shadow map refreshes every other frame (same trick as the mirror floor)
+    gl.shadowMap.needsUpdate = frame.current++ % 2 === 0;
     const l = light.current;
     if (!l) return;
     // snap to a 1 m grid to avoid shadow shimmer while moving
@@ -195,7 +224,7 @@ export function LightShafts({ positions }: { positions: [number, number, number]
     m.instanceMatrix.needsUpdate = true;
   }, [positions]);
   return (
-    <instancedMesh ref={mesh} args={[undefined, undefined, count]} frustumCulled={false}>
+    <instancedMesh ref={(m) => { mesh.current = m; m?.layers.set(1); }} args={[undefined, undefined, count]} frustumCulled={false}>
       <planeGeometry args={[5.5, 12.5]} />
       <meshBasicMaterial
         map={tex}
@@ -239,7 +268,7 @@ export function Dust({ count, from, to }: { count: number; from: number; to: num
     a.needsUpdate = true;
   });
   return (
-    <points ref={pts} geometry={geo} frustumCulled={false}>
+    <points ref={(p) => { pts.current = p as THREE.Points | null; p?.layers.set(1); }} geometry={geo} frustumCulled={false}>
       <pointsMaterial
         map={tex}
         size={0.09}

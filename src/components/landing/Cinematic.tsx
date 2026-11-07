@@ -4,7 +4,7 @@
 // panels, the scoreboard HUD, and the final convergence CTA. Falls back to a
 // designed static story for reduced motion or when WebGL is unavailable.
 import dynamic from "next/dynamic";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { COPY } from "@/content/copy";
@@ -31,6 +31,18 @@ export function Cinematic({ children }: { children: ReactNode }) {
   const journeyRef = useRef<HTMLElement>(null);
   const finalRef = useRef<HTMLElement>(null);
   const boardRef = useRef<HTMLDivElement>(null);
+  // Which 3D sections are on screen; the render loop also pauses while the booking dialog is open.
+  const vis = useRef({ journey: false, final: false, dialog: false });
+  const { isOpen: dialogOpen } = useBooking();
+  const syncRender = useCallback(() => {
+    const onScreen = vis.current.journey || vis.current.final;
+    scrollState.setVisible(onScreen && !vis.current.dialog);
+    setCanvasOn(onScreen);
+  }, []);
+  useEffect(() => {
+    vis.current.dialog = dialogOpen;
+    syncRender();
+  }, [dialogOpen, syncRender]);
 
   // Mount WebGL only after first paint + fonts, so HTML booking UI is never blocked.
   useEffect(() => {
@@ -53,13 +65,7 @@ export function Cinematic({ children }: { children: ReactNode }) {
     const journey = journeyRef.current!;
     const final = finalRef.current!;
     const panels = Array.from(journey.querySelectorAll<HTMLElement>("[data-panel]"));
-    let jVis = false;
-    let fVis = false;
-    const syncVisible = () => {
-      const v = jVis || fVis;
-      scrollState.setVisible(v);
-      setCanvasOn(v);
-    };
+    const syncVisible = syncRender;
 
     const applyPanels = (t: number) => {
       for (const el of panels) {
@@ -96,7 +102,7 @@ export function Cinematic({ children }: { children: ReactNode }) {
         start: "top bottom",
         end: "bottom 8%",
         onToggle: (self) => {
-          jVis = self.isActive;
+          vis.current.journey = self.isActive;
           syncVisible();
         },
       }),
@@ -115,7 +121,7 @@ export function Cinematic({ children }: { children: ReactNode }) {
         start: "top bottom",
         end: "bottom top",
         onToggle: (self) => {
-          fVis = self.isActive;
+          vis.current.final = self.isActive;
           syncVisible();
         },
       }),

@@ -9,7 +9,7 @@ import { FontLoader } from "three/examples/jsm/loaders/FontLoader.js";
 import { TextGeometry } from "three/examples/jsm/geometries/TextGeometry.js";
 import fontJson from "three/examples/fonts/helvetiker_bold.typeface.json";
 import { scrollState, smoothstep } from "./timeline";
-import { basketballTexture, fonts, highlightTexture, panelTexture } from "./textures";
+import { basketballTexture, fonts, panelTexture } from "./textures";
 import {
   ArenaFloor,
   Benches,
@@ -23,6 +23,8 @@ import {
   useArenaVideo,
   usePBR,
 } from "./Realism";
+import { FilmTimeline, GALLERY_CLIPS, HighlightScreen, cropTo169, usePhotoTextures } from "./Gallery";
+import { CeilingLights, CeilingStructure, RibbonBoards, VideoWalls, useLightGrid } from "./ArenaShell";
 
 const LIME = new THREE.Color("#D7FF3F");
 const ORANGE = new THREE.Color("#FF7648");
@@ -140,6 +142,9 @@ function CameraRig({ mobile, timeRef }: { mobile: boolean; timeRef: React.Mutabl
   const light = useRef<THREE.PointLight>(null);
   const par = useRef({ x: 0, y: 0 });
 
+  useLayoutEffect(() => {
+    camera.layers.enable(MAIN_ONLY);
+  }, [camera]);
   useFrame((_, dt) => {
     const cam = camera as THREE.PerspectiveCamera;
     const fov = size.width / size.height < 0.9 ? 68 : 50;
@@ -173,6 +178,14 @@ function CameraRig({ mobile, timeRef }: { mobile: boolean; timeRef: React.Mutabl
 }
 
 // ------------------------------------------------------------ helpers
+/**
+ * Layer 1 = drawn by the main camera only. The mirror floor and shadow cameras
+ * see layer 0, so floor markings and light effects skip those extra passes.
+ */
+export const MAIN_ONLY = 1;
+const mainOnly = (o: THREE.Object3D | null) => {
+  o?.traverse((c) => c.layers.set(MAIN_ONLY));
+};
 function Word({
   word,
   position,
@@ -195,7 +208,7 @@ function Word({
     const left = word.letters.slice(0, splitAt);
     const right = word.letters.slice(splitAt);
     return (
-      <group position={position}>
+      <group position={position} userData={{ caster: true }}>
         <group ref={(g) => { groupsRef.current[0] = g; }}>
           {left.map((L, i) => (
             <mesh key={i} geometry={L.geo} material={mats} position={[offset + L.x, 0, 0]} />
@@ -210,7 +223,7 @@ function Word({
     );
   }
   return (
-    <group position={position}>
+    <group position={position} userData={{ caster: true }}>
       {word.letters.map((L, i) => (
         <mesh key={i} geometry={L.geo} material={mats} position={[offset + L.x, 0, 0]} />
       ))}
@@ -283,7 +296,7 @@ function FloorLine({ from, to, width = 0.08, color = WHITE, y = 0.015 }: { from:
   const dz = to[1] - from[1];
   const len = Math.hypot(dx, dz);
   return (
-    <mesh position={[(from[0] + to[0]) / 2, y, (from[1] + to[1]) / 2]} rotation={[-Math.PI / 2, 0, -Math.atan2(dz, dx)]}>
+    <mesh ref={mainOnly} position={[(from[0] + to[0]) / 2, y, (from[1] + to[1]) / 2]} rotation={[-Math.PI / 2, 0, -Math.atan2(dz, dx)]}>
       <planeGeometry args={[len, width]} />
       <meshBasicMaterial color={color} toneMapped={false} />
     </mesh>
@@ -292,7 +305,7 @@ function FloorLine({ from, to, width = 0.08, color = WHITE, y = 0.015 }: { from:
 
 function FloorRing({ x, z, r, width = 0.08, start = 0, length = Math.PI * 2, color = WHITE, y = 0.016, opacityRef }: { x: number; z: number; r: number; width?: number; start?: number; length?: number; color?: THREE.ColorRepresentation; y?: number; opacityRef?: React.Ref<THREE.MeshBasicMaterial> }) {
   return (
-    <mesh position={[x, y, z]} rotation={[-Math.PI / 2, 0, 0]}>
+    <mesh ref={mainOnly} position={[x, y, z]} rotation={[-Math.PI / 2, 0, 0]}>
       <ringGeometry args={[r - width / 2, r + width / 2, 64, 1, start, length]} />
       <meshBasicMaterial ref={opacityRef} color={color} toneMapped={false} transparent={!!opacityRef} side={THREE.DoubleSide} />
     </mesh>
@@ -314,7 +327,7 @@ function Rect({ x, z, w, d, width = 0.08, color = WHITE }: { x: number; z: numbe
 function Ball({ position, r = 0.3 }: { position: V; r?: number }) {
   const tex = useMemo(() => basketballTexture(), []);
   return (
-    <group position={position}>
+    <group position={position} userData={{ caster: true }}>
       <mesh rotation={[0.4, 0.8, 0.2]}>
         <sphereGeometry args={[r, 32, 20]} />
         <meshStandardMaterial map={tex} roughness={0.65} />
@@ -330,7 +343,7 @@ function Ball({ position, r = 0.3 }: { position: V; r?: number }) {
 function Hoop({ position, facing }: { position: V; facing: number }) {
   // facing: rotation around Y so the board faces the court
   return (
-    <group position={position} rotation={[0, facing, 0]}>
+    <group position={position} rotation={[0, facing, 0]} userData={{ caster: true }}>
       <Box args={[0.18, 3.6, 0.18]} position={[0, 1.8, -1.2]} color="#2b3530" />
       <Box args={[0.14, 0.14, 1.1]} position={[0, 3.55, -0.65]} color="#2b3530" />
       <mesh position={[0, 3.5, -0.1]}>
@@ -503,34 +516,18 @@ function Courtside({ mobile }: { mobile: boolean }) {
 
 function Arena({ mobile }: { mobile: boolean }) {
   const panel = usePBR("panel_acoustic_dark", R_PANEL, PANEL_PARAMS);
-  const lights = useMemo(() => {
-    const out: V[] = [];
-    for (let z = -28; z > -200; z -= mobile ? 16 : 10) for (const x of [-7, 7]) out.push([x, 13, z]);
-    return out;
-  }, [mobile]);
-  const lightMesh = useRef<THREE.InstancedMesh>(null);
-  useLayoutEffect(() => {
-    const m = lightMesh.current;
-    if (!m) return;
-    const o = new THREE.Object3D();
-    lights.forEach((p, i) => {
-      o.position.set(...p);
-      o.updateMatrix();
-      m.setMatrixAt(i, o.matrix);
-    });
-    m.instanceMatrix.needsUpdate = true;
-  }, [lights]);
+  const grid = useLightGrid(mobile);
   return (
     <group>
       <ArenaFloor quality={mobile ? "low" : "high"} />
-      <instancedMesh ref={lightMesh} args={[undefined, undefined, lights.length]}>
-        <boxGeometry args={[5, 0.12, 0.5]} />
-        <meshBasicMaterial color={LIGHT_GLOW} toneMapped={false} />
-      </instancedMesh>
-      {!mobile && <LightShafts positions={lights} />}
-      <Dust count={mobile ? 350 : 1400} from={-24} to={-185} />
-      {/* seating bowl with lime edge lines for parallax */}
+      <CeilingStructure mobile={mobile} />
+      <CeilingLights mobile={mobile} positions={grid.all} />
+      <LightShafts positions={grid.shafts} />
+      <Dust count={mobile ? 450 : 1400} from={-24} to={-185} />
+      {/* seating bowl, LED ribbon boards and highlight video walls */}
       <Bleachers shadows={!mobile} mobile={mobile} />
+      <RibbonBoards />
+      <VideoWalls />
       {[-1, 1].map((s) => (
         <group key={s}>
           <Box args={[0.06, 0.06, 172]} position={[s * 15.5, 0.08, -110]} color={LIME} emissive glow={2} />
@@ -621,7 +618,7 @@ function PlayWorld({ mobile, timeRef }: { mobile: boolean; timeRef: React.Mutabl
       ))}
 
       {/* billiards table between BOOK and PLAY */}
-      <group position={[-7.5, 0, -70]} rotation={[0, 0.3, 0]}>
+      <group position={[-7.5, 0, -70]} rotation={[0, 0.3, 0]} userData={{ caster: true }}>
         <Box args={[3, 0.8, 1.7]} position={[0, 0.4, 0]} color="#3d2414" />
         <mesh position={[0, 0.81, 0]} material={felt}>
           <boxGeometry args={[2.7, 0.04, 1.4]} />
@@ -708,23 +705,18 @@ function PlayWorld({ mobile, timeRef }: { mobile: boolean; timeRef: React.Mutabl
   );
 }
 
-const CLIPS: ["basketball" | "rally" | "billiards" | "futsal", string][] = [
-  ["basketball", "Fast break and-one"],
-  ["rally", "Twenty-shot rally"],
-  ["billiards", "Bank shot to win"],
-  ["basketball", "Corner three"],
-  ["futsal", "Through ball finish"],
-  ["rally", "Kitchen battle"],
-  ["billiards", "Clean break"],
-  ["basketball", "Block at the rim"],
-];
-
 function ReplayWorld({ mobile, timeRef }: { mobile: boolean; timeRef: React.MutableRefObject<number> }) {
   const face = useMemo(() => new THREE.MeshStandardMaterial({ color: LIME, emissive: LIME, emissiveIntensity: 0.35, roughness: 0.4 }), []);
   const side = useMemo(() => new THREE.MeshStandardMaterial({ color: "#1b231f", roughness: 0.6 }), []);
-  const textures = useMemo(() => CLIPS.map(([k, l]) => highlightTexture(k, l)), []);
+  const photos = usePhotoTextures(GALLERY_CLIPS);
+  // separate copy of the basketball photo for the gate (the gallery animates its own crop)
+  const gatePhoto = useMemo(() => {
+    const t = photos[0].clone();
+    t.needsUpdate = true;
+    cropTo169(t, GALLERY_CLIPS[0].focusY, 1);
+    return t;
+  }, [photos]);
   const screenMat = useRef<THREE.MeshBasicMaterial>(null);
-  const head = useRef<THREE.Mesh>(null);
   // The giant screen plays the ambient arena loop while it's in view.
   const video = useArenaVideo(() => timeRef.current > 0.55 && timeRef.current < 0.74);
   useFrame(() => {
@@ -732,18 +724,29 @@ function ReplayWorld({ mobile, timeRef }: { mobile: boolean; timeRef: React.Muta
     const m = screenMat.current;
     if (m) {
       m.opacity = 1 - smoothstep(0.66, 0.712, t);
-      const want = video.ready() ? video.texture : textures[0];
+      const want = video.ready() ? video.texture : gatePhoto;
       if (m.map !== want) {
         m.map = want;
         m.needsUpdate = true;
       }
     }
-    if (head.current) head.current.position.z = -128 - smoothstep(0.72, 0.88, t) * 34;
   });
-  const frames = (mobile ? CLIPS.slice(0, 4) : CLIPS).map((c, i) => {
+  // Upper deck: big screens above the corridor, each with its own texture copy.
+  const upper = useMemo(
+    () =>
+      [3, 6, 1, 4].map((ci, k) => {
+        const s = k % 2 ? 1 : -1;
+        const photo = photos[ci].clone();
+        photo.needsUpdate = true;
+        return { clip: GALLERY_CLIPS[ci], photo, pos: [s * 10, 8.4, -137 - Math.floor(k / 2) * 18] as V, rotY: -s * 0.42 };
+      }),
+    [photos],
+  );
+  // Corridor screens: alternating sides, staggered heights.
+  const screens = GALLERY_CLIPS.map((clip, i) => {
     const s = i % 2 ? 1 : -1;
     const row = Math.floor(i / 2);
-    return { tex: textures[i], pos: [s * 5.6, 3.2 + (row % 2 ? 1.1 : -0.3), -133 - row * 8] as V, rotY: -s * 0.55, label: c[1] };
+    return { clip, photo: photos[i], pos: [s * 5.6, 3.3 + (row % 2 ? 1.1 : -0.25), -133 - row * 8] as V, rotY: -s * 0.55 };
   });
   return (
     <group>
@@ -760,47 +763,19 @@ function ReplayWorld({ mobile, timeRef }: { mobile: boolean; timeRef: React.Muta
         <Box args={[0.06, GATE.h, 0.06]} position={[GATE.w / 2, 0, 0.28]} color={LIME} emissive glow={2} />
         <mesh>
           <planeGeometry args={[GATE.w, GATE.h]} />
-          <meshBasicMaterial ref={screenMat} map={textures[0]} transparent toneMapped={false} side={THREE.DoubleSide} />
+          <meshBasicMaterial ref={screenMat} map={gatePhoto} transparent toneMapped={false} side={THREE.DoubleSide} />
         </mesh>
       </group>
       <Word word={REPLAY} position={[0, GATE.cy + GATE.h / 2 + 0.5, GATE_Z]} offset={-REPLAY.width / 2} face={face} side={side} />
-      {/* gallery corridor */}
-      {frames.map((f, i) => (
-        <group key={i} position={f.pos} rotation={[0, f.rotY, 0]}>
-          <mesh>
-            <planeGeometry args={[4.2, 2.36]} />
-            <meshBasicMaterial map={f.tex} toneMapped={false} side={THREE.DoubleSide} />
-          </mesh>
-          <mesh position={[0, 0, -0.02]}>
-            <planeGeometry args={[4.36, 2.52]} />
-            <meshBasicMaterial color={i === 0 ? LIME : "#2E3A33"} toneMapped={false} side={THREE.DoubleSide} />
-          </mesh>
-        </group>
+      {/* gallery corridor of highlight screens */}
+      {screens.map((sc, i) => (
+        <HighlightScreen key={i} clip={sc.clip} photo={sc.photo} position={sc.pos} rotY={sc.rotY} featured={i === 0} mirror={mobile} phase={i} />
       ))}
-      {!mobile &&
-        [-1, 1].map((s) => (
-          <group key={s} position={[s * 9, 8, -148]} rotation={[0, -s * 0.4, 0]}>
-            <mesh>
-              <planeGeometry args={[6, 3.4]} />
-              <meshBasicMaterial map={textures[s > 0 ? 4 : 2]} toneMapped={false} transparent opacity={0.65} />
-            </mesh>
-          </group>
-        ))}
-      {/* floor clip timeline */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, -145]}>
-        <planeGeometry args={[1.4, 34]} />
-        <meshBasicMaterial color="#18211c" />
-      </mesh>
-      {[-130, -137, -141, -150, -158].map((z, i) => (
-        <mesh key={i} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.03, z]}>
-          <planeGeometry args={[1.2, i % 2 ? 1.2 : 2]} />
-          <meshBasicMaterial color={LIME} transparent opacity={0.7} toneMapped={false} />
-        </mesh>
+      {/* upper-deck screens */}
+      {upper.map((u, k) => (
+        <HighlightScreen key={k} clip={u.clip} photo={u.photo} position={u.pos} rotY={u.rotY} width={6.4} phase={10 + k} dim={0.85} />
       ))}
-      <mesh ref={head} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.04, -128]}>
-        <planeGeometry args={[1.8, 0.14]} />
-        <meshBasicMaterial color={ORANGE} toneMapped={false} />
-      </mesh>
+      <FilmTimeline z0={-128} length={34} timeRef={timeRef} from={0.72} to={0.88} />
     </group>
   );
 }
@@ -857,7 +832,7 @@ function Convergence({ mobile, timeRef }: { mobile: boolean; timeRef: React.Muta
         <Word word={MARK} position={[0, 0, 0]} offset={-MARK.width / 2} face={face} side={side} />
       </group>
       {pieces.map((p, i) => (
-        <mesh key={i} ref={(m) => { meshes.current[i] = m; }}>
+        <mesh key={i} ref={(m) => { meshes.current[i] = m; mainOnly(m); }}>
           <boxGeometry args={[p.len, 0.09, 0.09]} />
           <meshBasicMaterial color={p.lime ? LIME : ORANGE} toneMapped={false} />
         </mesh>
@@ -906,26 +881,34 @@ function PlayRoute({ mobile, timeRef }: { mobile: boolean; timeRef: React.Mutabl
     m.count = n;
   });
   return (
-    <instancedMesh ref={mesh} args={[undefined, undefined, dashes.length]} frustumCulled={false}>
+    <instancedMesh ref={(m) => { mesh.current = m; mainOnly(m); }} args={[undefined, undefined, dashes.length]} frustumCulled={false}>
       <boxGeometry args={[0.16, 0.02, 0.55]} />
       <meshBasicMaterial color={ROUTE_GLOW} toneMapped={false} />
     </instancedMesh>
   );
 }
 
-/** Every lit, solid mesh casts and receives shadows (planes and unlit panels excluded). */
+/**
+ * Lit meshes receive shadows; only hero objects (groups tagged
+ * userData.caster) cast them, keeping the shadow pass cheap.
+ */
 function ShadowFlags() {
   const { scene } = useThree();
   useEffect(() => {
-    scene.traverse((o) => {
+    const visit = (o: THREE.Object3D, cast: boolean) => {
+      const c = cast || !!o.userData?.caster;
       const m = o as THREE.Mesh;
-      if (!m.isMesh || (m as unknown as THREE.InstancedMesh).isInstancedMesh) return;
-      const lit = !(m.material as THREE.Material & { isMeshBasicMaterial?: boolean }).isMeshBasicMaterial;
-      if (!lit) return;
-      const flat = m.geometry.type === "PlaneGeometry" || m.geometry.type === "CircleGeometry" || m.geometry.type === "RingGeometry";
-      m.castShadow = !flat;
-      m.receiveShadow = true;
-    });
+      if (m.isMesh && !(m as unknown as THREE.InstancedMesh).isInstancedMesh) {
+        const lit = !(m.material as THREE.Material & { isMeshBasicMaterial?: boolean }).isMeshBasicMaterial;
+        if (lit) {
+          const flat = m.geometry.type === "PlaneGeometry" || m.geometry.type === "CircleGeometry" || m.geometry.type === "RingGeometry";
+          m.castShadow = c && !flat;
+          m.receiveShadow = true;
+        }
+      }
+      o.children.forEach((ch) => visit(ch, c));
+    };
+    visit(scene, false);
   }, [scene]);
   return null;
 }

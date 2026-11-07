@@ -63,7 +63,12 @@ export function SportsSection() {
                       alt=""
                       fill
                       sizes={s.featured ? "(max-width: 1020px) 100vw, 50vw" : "(max-width: 1020px) 50vw, 25vw"}
-                      style={{ objectFit: "cover", objectPosition: SPORT_PHOTOS[s.id]!.position ?? "center" }}
+                      style={{
+                        objectFit: "cover",
+                        objectPosition: SPORT_PHOTOS[s.id]!.position ?? "center",
+                        transform: `scale(${SPORT_PHOTOS[s.id]!.zoom ?? 1})`,
+                        transformOrigin: "50% 100%",
+                      }}
                     />
                   ) : (
                     <SportArt sport={s.id} />

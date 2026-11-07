@@ -93,4 +93,33 @@ export const sportById = (id: SportId) => SPORTS.find((s) => s.id === id)!;
  * `illustrative: true` = AI-generated or staged image, labelled as such on the
  * card so it is never mistaken for real venue photography.
  */
-export const SPORT_PHOTOS: Partial<Record<SportId, { src: string; alt: string; illustrative: boolean; position?: string }>> = {};
+export interface SportPhoto {
+  src: string;
+  alt: string;
+  illustrative: boolean;
+  /** CSS object-position */
+  position?: string;
+  /** Zoom anchored at the bottom edge: lifts a low subject clear of the card text */
+  zoom?: number;
+}
+
+const photo = (id: SportId, alt: string, zoom = 1, position = "center"): SportPhoto => ({
+  src: `/assets/sports/${id}.jpg`,
+  alt,
+  illustrative: true, // AI-generated images (see docs/SPORT_PHOTO_PROMPTS.md)
+  zoom,
+  position,
+});
+
+export const SPORT_PHOTOS: Partial<Record<SportId, SportPhoto>> = {
+  basketball: photo("basketball", "Basketball on glossy hardwood beneath a glass-backboard hoop"),
+  billiards: photo("billiards", "Racked pool balls and a cue on green cloth under a pendant lamp", 1.15),
+  volleyball: photo("volleyball", "Volleyball on an indoor court beside the net post", 1.3, "40% center"),
+  badminton: photo("badminton", "Feather shuttlecock and racket on a green court mat", 1.2),
+  pickleball: photo("pickleball", "Pickleball paddle and perforated ball at the kitchen line", 1.25),
+  "table-tennis": photo("table-tennis", "Red paddle and white ball on a blue table tennis table", 1.2),
+  futsal: photo("futsal", "Futsal ball on turf in front of a small goal", 1.1),
+  tennis: photo("tennis", "Tennis racket and ball on a blue hard court", 1.2),
+  padel: photo("padel", "Perforated padel racket and ball in front of the glass wall"),
+  "sepak-takraw": photo("sepak-takraw", "Woven sepak takraw ball on an indoor court", 1.1),
+};

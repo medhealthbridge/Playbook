@@ -1141,6 +1141,35 @@ html[data-motion="reduced"] .scroll-cue span.bar {
   .sport-card p {
     font-size: 0.85rem;
   }
+  /* Small photo cards on phones: photo on top, text below, so text never covers the equipment */
+  .sport-card.has-photo:not(.featured) {
+    justify-content: flex-start;
+    min-height: 0;
+  }
+  .sport-card.has-photo:not(.featured)::after {
+    display: none;
+  }
+  .sport-card.has-photo:not(.featured) .art {
+    position: relative;
+    inset: auto;
+    display: block;
+    aspect-ratio: 1 / 1;
+    margin: -14px -14px 10px;
+    overflow: hidden;
+  }
+  .sport-card.has-photo:not(.featured) .art img {
+    transform: none !important;
+  }
+  .sport-card.has-photo:not(.featured) .art::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(180deg, rgba(16, 23, 19, 0.4) 0%, transparent 28%, transparent 68%, var(--charcoal) 100%);
+  }
+  .sport-card.has-photo:not(.featured) .illustrative {
+    top: 46px;
+    left: 16px;
+  }
 }
 
 /* sport detail panel */

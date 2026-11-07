@@ -2,7 +2,7 @@
 // The single WebGL canvas. Loaded lazily (never blocks the HTML booking UI),
 // paused when off-screen, and falls back silently if WebGL fails.
 import { Canvas } from "@react-three/fiber";
-import { Component, Suspense, useEffect, useState, type ReactNode } from "react";
+import { Component, Suspense, useEffect, useRef, useState, type ReactNode } from "react";
 import * as THREE from "three";
 import { scrollState } from "./timeline";
 import { World } from "./World";
@@ -31,6 +31,13 @@ function Ready({ onReady }: { onReady: () => void }) {
 export default function Experience({ onReady, onFail }: { onReady: () => void; onFail: () => void }) {
   const [visible, setVisible] = useState(scrollState.visible);
   const [mobile, setMobile] = useState(false);
+  const alive = useRef(true);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     const mq = window.matchMedia("(max-width: 760px), (pointer: coarse)");
@@ -64,7 +71,11 @@ export default function Experience({ onReady, onFail }: { onReady: () => void; o
         onCreated={({ gl }) => {
           gl.toneMapping = THREE.ACESFilmicToneMapping;
           gl.toneMappingExposure = 1.05;
-          gl.domElement.addEventListener("webglcontextlost", (e) => {
+          const canvas = gl.domElement;
+          canvas.addEventListener("webglcontextlost", (e) => {
+            // Unmounting (e.g. the user turns 3D off) deliberately releases the
+            // context; only a loss on a live, attached canvas is a real failure.
+            if (!alive.current || !canvas.isConnected) return;
             e.preventDefault();
             onFail();
           });

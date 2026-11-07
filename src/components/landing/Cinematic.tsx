@@ -15,6 +15,7 @@ import { SportArt } from "../art/SportArt";
 import { Wordmark } from "../art/Wordmark";
 import { BookCard, PlayCard, ReplayCard } from "./ChapterCards";
 import { HeroSearch } from "./HeroSearch";
+import { LoadingScreen } from "./LoadingScreen";
 
 const Experience = dynamic(() => import("../three/Experience"), { ssr: false });
 
@@ -26,6 +27,26 @@ export function Cinematic({ children }: { children: ReactNode }) {
   const cinematic = !reduced && webgl !== false;
   const [mountGL, setMountGL] = useState(false);
   const [glReady, setGlReady] = useState(false);
+  // First-visit loading screen (only for the 3D experience, once per session).
+  // Starts visible (also in the server HTML) so the page never flashes before it.
+  const [showLoader, setShowLoader] = useState(true);
+  useEffect(() => {
+    let seen = false;
+    try {
+      seen = sessionStorage.getItem("playbook-loaded") === "1";
+    } catch {
+      /* ignore */
+    }
+    if (!cinematic || seen) setShowLoader(false);
+  }, [cinematic]);
+  const loaderDone = useCallback(() => {
+    setShowLoader(false);
+    try {
+      sessionStorage.setItem("playbook-loaded", "1");
+    } catch {
+      /* ignore */
+    }
+  }, []);
   const [canvasOn, setCanvasOn] = useState(true);
   const [chapter, setChapter] = useState(-1);
   const journeyRef = useRef<HTMLElement>(null);
@@ -176,6 +197,7 @@ export function Cinematic({ children }: { children: ReactNode }) {
 
   return (
     <>
+      {showLoader && <LoadingScreen ready={glReady} onDone={loaderDone} />}
       <div className={`canvas-layer ${canvasOn ? "" : "is-hidden"}`} aria-hidden="true">
         <div className="canvas-fallback" />
         {mountGL && (

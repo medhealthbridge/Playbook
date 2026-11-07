@@ -2605,3 +2605,130 @@ html[data-motion="reduced"] .dialog[open] {
     display: none;
   }
 }
+
+/* ---------------- responsive refinements ---------------- */
+.nav-links a,
+.nav-signin,
+.motion-toggle .label {
+  white-space: nowrap;
+}
+/* Small laptops / tablets in landscape: keep the full nav on one line. */
+@media (min-width: 1021px) and (max-width: 1240px) {
+  .nav-inner {
+    gap: 12px;
+  }
+  .nav-links a {
+    padding: 8px 8px;
+    font-size: 0.86rem;
+  }
+  .motion-toggle .label {
+    display: none;
+  }
+}
+/* The right-aligned chapter keeps its copy in the only column on narrow screens
+   (overrides the inline desktop grid placement). */
+@media (max-width: 860px) {
+  .scene-panel.align-right > .inner > .copy {
+    grid-column: 1 !important;
+  }
+}
+/* Small phones: clip rules read better in one column. */
+@media (max-width: 480px) {
+  .rules {
+    grid-template-columns: 1fr;
+  }
+}
+/* Phones in landscape (short viewports): two-column story panels sized to the
+   height so the heading, copy and the booking card all fit on one screen. */
+@media (orientation: landscape) and (max-height: 560px) {
+  :root {
+    --mobilebar-h: 0px;
+  }
+  .mobile-bar {
+    display: none;
+  }
+  .scene-panel {
+    align-items: center;
+    padding: calc(var(--nav-h) + 6px) var(--gutter) 12px;
+  }
+  .scene-panel > .inner {
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+    gap: 24px;
+  }
+  .scene-panel.align-right > .inner > .copy {
+    grid-column: 2 !important;
+  }
+  .scene-panel:not(.hero) .hide-sm,
+  .scene-panel:not(.hero) .info-card.hide-sm {
+    display: block !important;
+  }
+  .scene-panel h2 {
+    font-size: clamp(1.7rem, 9vh, 2.8rem);
+    margin: 4px 0 8px;
+  }
+  .scene-panel .lede {
+    font-size: 0.86rem;
+    max-width: 48ch;
+  }
+  .scene-panel .eyebrow {
+    font-size: 0.7rem;
+    margin: 0;
+  }
+  .scene-panel .btn-sm {
+    margin-top: 10px !important;
+  }
+  .info-card {
+    padding: 12px;
+    gap: 8px;
+    font-size: 0.85rem;
+  }
+  /* hero: copy left, compact slot finder right */
+  .hero .inner {
+    grid-template-columns: 1fr;
+  }
+  .hero .copy {
+    max-width: none;
+    display: grid;
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+    column-gap: 24px;
+    align-items: center;
+  }
+  .hero .copy > * {
+    grid-column: 1;
+  }
+  .hero .inner > .hide-sm,
+  .hero .copy > .hide-sm {
+    display: none !important;
+  }
+  .hero .copy > .show-sm {
+    display: block !important;
+    grid-column: 2;
+    grid-row: 1 / span 4;
+    margin-top: 0 !important;
+  }
+  .hero h1 {
+    font-size: clamp(2rem, 12vh, 3.6rem);
+    margin: 4px 0 8px;
+  }
+  .hero .lede {
+    font-size: 0.86rem;
+  }
+  .hero .search-card {
+    padding: 14px;
+    gap: 10px;
+  }
+  .hero .search-card h2 {
+    font-size: 1.2rem;
+  }
+  .hero-venue-link {
+    margin-top: 8px;
+    font-size: 0.85rem;
+  }
+  .scroll-cue {
+    display: none;
+  }
+  /* sections: avoid full-height blocks taller than the screen */
+  .dialog {
+    max-height: calc(100dvh - 12px);
+  }
+}

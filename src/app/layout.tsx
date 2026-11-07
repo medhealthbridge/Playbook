@@ -17,6 +17,22 @@ export const metadata: Metadata = {
   description:
     "Find a court or table, book your time, and bring your people. Keep the best moments with highlights at participating venues on eligible plans.",
   icons: { icon: "/icon.svg" },
+  metadataBase: new URL("https://playbook.databridgesol.space"),
+  openGraph: {
+    type: "website",
+    url: "/",
+    siteName: "Playbook",
+    title: "Playbook — Book. Play. Replay.",
+    description: "Book courts, tables and pitches in Metro Manila. Keep your best moments with highlights at participating venues.",
+    images: [{ url: "/og-image.png", width: 1200, height: 630, alt: "Playbook — Book. Play. Replay." }],
+    locale: "en_PH",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Playbook — Book. Play. Replay.",
+    description: "Book courts, tables and pitches in Metro Manila. Keep your best moments with highlights at participating venues.",
+    images: ["/og-image.png"],
+  },
 };
 
 export const viewport: Viewport = {

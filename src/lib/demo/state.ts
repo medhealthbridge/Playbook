@@ -167,7 +167,7 @@ export function seedState(now = Date.now()): DemoState {
   ]);
   const pb = mine("rally-pb1", "pickleball", -1, 19, 1);
   rec(pb, "ready", "camera_upload", [
-    ["Doubles rally at the net", "rally", 1520, 1525],
+    ["Doubles rally at the net", "rally", 1520, 1524],
     ["Twelve-dink kitchen rally", "rally", 2210, 2231],
   ]);
   rec(mine("rally-pd1", "padel", -6, 18, 1), "ready", "camera_upload", [["Lob-and-smash finish", "rally", 1880, 1888]]);

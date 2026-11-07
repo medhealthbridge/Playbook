@@ -26,7 +26,7 @@ export interface Clip {
 // Pickleball leads (featured screen). The first four titles match the real
 // demo clips in src/content/highlights.ts; the rest are placeholder titles.
 export const GALLERY_CLIPS: Clip[] = [
-  { sport: "pickleball", title: "Doubles rally at the net", length: "0:05", focusY: 0.34, video: "/assets/video/highlight-pickleball.mp4" },
+  { sport: "pickleball", title: "Doubles rally at the net", length: "0:03", focusY: 0.34, video: "/assets/video/highlight-pickleball.mp4" },
   { sport: "basketball", title: "Block at the rim", length: "0:05", focusY: 0.55 },
   { sport: "padel", title: "Lob-and-smash finish", length: "0:08", focusY: 0.45 },
   { sport: "billiards", title: "Cut shot to the corner", length: "0:03", focusY: 0.42 },

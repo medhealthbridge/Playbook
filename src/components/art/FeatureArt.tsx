@@ -118,7 +118,7 @@ export function LibraryArt() {
       <circle cx="108" cy="72" r="15" fill={C.bg} fillOpacity="0.55" stroke={C.white} strokeOpacity="0.8" />
       <path d="M103 64 L116 72 L103 80 Z" fill={C.white} />
       <rect x="160" y="106" width="28" height="12" rx="3" fill={C.bg} fillOpacity="0.75" />
-      <text x="174" y="115" fill={C.white} textAnchor="middle" style={{ ...font, fontSize: 8, fontWeight: 700 }}>0:05</text>
+      <text x="174" y="115" fill={C.white} textAnchor="middle" style={{ ...font, fontSize: 8, fontWeight: 700 }}>0:03</text>
       {/* scrubber with clip markers and playhead */}
       <rect x="20" y="134" width="176" height="6" rx="3" fill={C.dim} />
       <rect x="20" y="134" width="70" height="6" rx="3" fill={C.lime} fillOpacity="0.35" />
@@ -126,7 +126,7 @@ export function LibraryArt() {
       <rect x="120" y="134" width="14" height="6" rx="3" fill={C.lime} />
       <rect x="89" y="131" width="2.5" height="12" rx="1" fill={C.orange} />
       <text x="20" y="160" fill={C.white} style={{ ...font, fontWeight: 700 }}>Doubles rally at the net</text>
-      <text x="20" y="176" fill={C.mute} style={font}>0:05 · Pickleball Court 1 · Demo clip</text>
+      <text x="20" y="176" fill={C.mute} style={font}>0:03 · Pickleball Court 1 · Demo clip</text>
       {/* library */}
       {side.map(([n, title, len], i) => {
         const y = 20 + i * 56;

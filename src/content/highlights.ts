@@ -32,7 +32,7 @@ export const HIGHLIGHTS: Highlight[] = [
     sport: "pickleball",
     title: "Doubles rally at the net",
     meta: "Pickleball Court 1 · Rally Point",
-    seconds: 5,
+    seconds: 3.5,
     kind: "rally",
     ...v("pickleball"),
   },

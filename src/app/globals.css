@@ -2998,3 +2998,150 @@ a[role="tab"] {
   padding: 12px 14px;
   font: inherit;
 }
+
+/* ---------------- booking ---------------- */
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.chip-row.scroll-x {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+.chip-row.scroll-x .btn {
+  flex: none;
+}
+.slot-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 8px;
+}
+.slot-btn {
+  width: 100%;
+  min-height: 44px;
+  border-radius: 10px;
+  border: 1.5px solid var(--charcoal);
+  background: var(--paper);
+  color: var(--charcoal);
+  font-weight: 700;
+  cursor: pointer;
+}
+.slot-btn:hover,
+.slot-btn:focus-visible {
+  background: var(--lime);
+  border-color: var(--lime);
+}
+.venue-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+}
+.venue-card {
+  display: grid;
+  gap: 8px;
+  padding: 18px;
+  border-radius: var(--radius);
+  border: 1px solid var(--line-light);
+  background: var(--paper);
+  color: var(--charcoal);
+  text-decoration: none;
+  align-content: start;
+}
+.venue-card:hover {
+  border-color: var(--charcoal);
+}
+.venue-card h2 {
+  font-size: 1.6rem;
+}
+.venue-card p {
+  margin: 0;
+}
+.venue-card .btn {
+  justify-self: start;
+  margin-top: 6px;
+}
+.venue-sports {
+  font-size: 0.9rem;
+}
+
+/* ---------------- venue day calendar ---------------- */
+.day-grid {
+  display: grid;
+  gap: 6px;
+  overflow-x: auto;
+  min-width: 0;
+}
+.day-hours {
+  position: relative;
+  height: 18px;
+  margin-left: 140px;
+  font-size: 0.7rem;
+  color: var(--muted);
+}
+.day-hours span {
+  position: absolute;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+.day-row {
+  display: grid;
+  grid-template-columns: 132px 1fr;
+  gap: 8px;
+  align-items: center;
+  min-width: 640px;
+}
+.day-label {
+  font-weight: 700;
+  font-size: 0.88rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.day-lane {
+  position: relative;
+  height: 40px;
+  border-radius: 8px;
+  background: repeating-linear-gradient(90deg, rgba(16, 23, 19, 0.04) 0 1px, transparent 1px 60px), #eef1ea;
+}
+.day-blk {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  border-radius: 6px;
+  padding: 0 6px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 32px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  text-decoration: none;
+  color: var(--charcoal);
+}
+.day-blk.confirmed,
+.legend.confirmed {
+  background: var(--lime);
+}
+.day-blk.held,
+.legend.held {
+  background: #ffe39a;
+}
+.day-blk.noshow,
+.legend.noshow {
+  background: #f3b0a0;
+}
+.day-blk.block,
+.legend.block {
+  background: repeating-linear-gradient(-45deg, #c9cfc5 0 6px, #dde2d9 6px 12px);
+  color: #3b463f;
+}
+.legend {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  margin: 0 4px 0 10px;
+  vertical-align: -1px;
+}

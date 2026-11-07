@@ -6,7 +6,10 @@ import { Flash, PortalHeader, VenueStatus, peso, when } from "@/components/porta
 import { SPORTS } from "@/content/sports";
 import { q, q1 } from "@/lib/server/db";
 import { requireVenueRole } from "@/lib/server/session";
-import { addCourt, addMember, removeMember, updateCourt, updateVenue } from "../actions";
+import { addBlock, addCourt, addMember, checkIn, connectPaymongo, disconnectPaymongo, markNoShow, removeBlock, removeMember, setPayAtVenue, updateCourt, updateVenue, walkIn } from "../actions";
+import { addDays, formatDate, formatRange, formatTime, manilaToday } from "@/lib/booking/time";
+import { hmToMin } from "@/lib/booking/engine";
+import { blocksOn, venueBookingsOn, venueById as getVenue } from "@/lib/server/bookings";
 
 export const metadata: Metadata = { title: "Venue dashboard — Playbook", robots: { index: false } };
 export const dynamic = "force-dynamic";
@@ -28,12 +31,15 @@ export default async function VenueDashboard({ params, searchParams }: { params:
     [id],
   );
   if (!venue) notFound();
-  const tab = ["overview", "courts", "staff", "settings"].includes(sp.tab ?? "") ? sp.tab! : "overview";
+  const tab = ["overview", "calendar", "courts", "staff", "payments", "settings"].includes(sp.tab ?? "") ? sp.tab! : "overview";
   const canManage = role === "owner" || role === "manager";
   const tabs = [
     { key: "overview", label: "Overview", href: `/venue/${id}` },
+    { key: "calendar", label: "Calendar", href: `/venue/${id}?tab=calendar` },
     { key: "courts", label: "Courts", href: `/venue/${id}?tab=courts` },
-    ...(canManage ? [{ key: "staff", label: "Staff", href: `/venue/${id}?tab=staff` }, { key: "settings", label: "Settings", href: `/venue/${id}?tab=settings` }] : []),
+    ...(canManage ? [{ key: "staff", label: "Staff", href: `/venue/${id}?tab=staff` }] : []),
+    ...(role === "owner" ? [{ key: "payments", label: "Payments", href: `/venue/${id}?tab=payments` }] : []),
+    ...(canManage ? [{ key: "settings", label: "Settings", href: `/venue/${id}?tab=settings` }] : []),
   ];
 
   return (
@@ -49,7 +55,9 @@ export default async function VenueDashboard({ params, searchParams }: { params:
         <div className="container app-stack">
           <Flash ok={sp.ok} error={sp.error} />
           {tab === "overview" && <Overview venue={venue} />}
+          {tab === "calendar" && <Calendar venueId={id} date={/^\d{4}-\d{2}-\d{2}$/.test(sp.date ?? "") ? sp.date! : manilaToday()} canManage={canManage} />}
           {tab === "courts" && <Courts venueId={id} canManage={canManage} />}
+          {tab === "payments" && role === "owner" && <Payments venueId={id} />}
           {tab === "staff" && canManage && <Staff venueId={id} isOwner={role === "owner"} />}
           {tab === "settings" && canManage && <Settings venue={venue} />}
         </div>
@@ -82,8 +90,9 @@ async function Overview({ venue }: { venue: Venue }) {
           <h2>Next steps</h2>
           <ul className="plain-list">
             <li>{venue.status === "active" ? "✓" : "•"} Venue approved by Playbook</li>
-            <li>• Connect your PayMongo account so players can pay you online <span className="badge badge-muted">Coming next</span></li>
-            <li>• Booking calendar and walk-ins <span className="badge badge-muted">Coming next</span></li>
+            <li>{venue.status === "active" ? "✓" : "•"} Players can find you at <Link href="/venues">playbook / venues</Link> once live</li>
+            <li>• <Link href={`/venue/${venue.id}?tab=payments`}>Connect PayMongo</Link> so players can pay you online (optional; pay-at-venue works without it)</li>
+            <li>• Use the <Link href={`/venue/${venue.id}?tab=calendar`}>calendar</Link> for walk-ins, check-ins and maintenance blocks</li>
           </ul>
         </section>
         <aside className="app-card">
@@ -212,5 +221,204 @@ function Settings({ venue }: { venue: Venue }) {
       <p className="hint">Name, address and business details are verified, so changes go through support.</p>
       <button className="btn" type="submit">Save settings</button>
     </form>
+  );
+}
+
+const STATUS_CLS: Record<string, string> = { held: "held", confirmed: "confirmed", completed: "confirmed", no_show: "noshow" };
+
+async function Calendar({ venueId, date, canManage }: { venueId: string; date: string; canManage: boolean }) {
+  const [venue, courts, bookings, blocks] = await Promise.all([getVenue(venueId), q<Court>("SELECT id, name, kind, sports, indoor, hourly_rate_cents, active FROM resource WHERE venue_id=$1 AND active ORDER BY sort, created_at", [venueId]), venueBookingsOn(venueId, date), blocksOn(venueId, date)]);
+  const open = hmToMin(venue!.open_time);
+  const close = hmToMin(venue!.close_time);
+  const span = close - open;
+  const pct = (m: number) => `${((Math.min(Math.max(m, open), close) - open) / span) * 100}%`;
+  const hours = Array.from({ length: Math.floor(span / 60) + 1 }, (_, i) => open + i * 60).filter((m) => m <= close);
+  const courtName = (rid: string) => courts.find((c) => c.id === rid)?.name ?? "Court";
+  const today = manilaToday();
+  return (
+    <>
+      <section className="app-card">
+        <div className="inline-form">
+          <h2 style={{ marginRight: "auto" }}>{formatDate(date)}{date === today ? " · today" : ""}</h2>
+          <Link className="btn btn-xs btn-outline" href={`/venue/${venueId}?tab=calendar&date=${addDays(date, -1)}`}>← Prev</Link>
+          <Link className="btn btn-xs btn-outline" href={`/venue/${venueId}?tab=calendar&date=${today}`}>Today</Link>
+          <Link className="btn btn-xs btn-outline" href={`/venue/${venueId}?tab=calendar&date=${addDays(date, 1)}`}>Next →</Link>
+          <form action={`/venue/${venueId}`} className="inline-form">
+            <input type="hidden" name="tab" value="calendar" />
+            <input className="input" type="date" name="date" defaultValue={date} aria-label="Go to date" />
+            <button className="btn btn-xs" type="submit">Go</button>
+          </form>
+        </div>
+        <div className="day-grid" role="img" aria-label={`Bookings on ${formatDate(date)}`}>
+          <div className="day-hours">
+            {hours.map((m) => <span key={m} style={{ left: pct(m) }}>{formatTime(m)}</span>)}
+          </div>
+          {courts.map((c) => (
+            <div key={c.id} className="day-row">
+              <span className="day-label">{c.name}</span>
+              <div className="day-lane">
+                {blocks.filter((b) => b.resource_id === c.id).map((b) => (
+                  <span key={b.id} className="day-blk block" style={{ left: pct(b.start_min), width: `calc(${pct(b.end_min)} - ${pct(b.start_min)})` }} title={b.reason}>{b.reason}</span>
+                ))}
+                {bookings.filter((b) => b.resource_id === c.id).map((b) => (
+                  <Link key={b.id} href={`/bookings/${b.id}`} className={`day-blk ${STATUS_CLS[b.status] ?? ""}`} style={{ left: pct(b.start_min), width: `calc(${pct(b.end_min)} - ${pct(b.start_min)})` }} title={`${b.customer_name} · ${formatRange(b.start_min, b.end_min)}`}>
+                    {b.customer_name}
+                  </Link>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+        <p className="hint"><span className="legend confirmed" /> Confirmed <span className="legend held" /> Waiting for payment <span className="legend noshow" /> No-show <span className="legend block" /> Blocked</p>
+      </section>
+
+      <section className="app-card">
+        <h2>Bookings</h2>
+        {bookings.length === 0 ? <p className="hint">No bookings on this day yet.</p> : (
+          <div className="table-wrap">
+            <table className="data-table">
+              <thead><tr><th scope="col">Time</th><th scope="col">Court</th><th scope="col">Player</th><th scope="col">Status</th><th scope="col">Paid</th><th scope="col">Front desk</th></tr></thead>
+              <tbody>
+                {bookings.map((b) => (
+                  <tr key={b.id}>
+                    <td>{formatRange(b.start_min, b.end_min)}</td>
+                    <td>{courtName(b.resource_id)}</td>
+                    <td><Link href={`/bookings/${b.id}`}>{b.customer_name}</Link><br /><span className="hint">{b.ref}{b.customer_phone ? ` · ${b.customer_phone}` : ""}{b.source === "walk_in" ? " · walk-in" : ""}</span></td>
+                    <td>{b.status === "held" ? "waiting for payment" : b.status.replace("_", "-")}{b.checked_in_at && <><br /><span className="badge badge-ok">checked in</span></>}</td>
+                    <td>{peso(b.paid_cents)} / {peso(b.price_cents)}</td>
+                    <td>
+                      {b.status === "confirmed" && !b.checked_in_at && (
+                        <div className="app-stack" style={{ gap: 6 }}>
+                          <form action={checkIn} className="inline-form">
+                            <input type="hidden" name="venue_id" value={venueId} />
+                            <input type="hidden" name="id" value={b.id} />
+                            {b.price_cents > b.paid_cents && <input className="input" name="collected" inputMode="decimal" placeholder={`Collect ₱${(b.price_cents - b.paid_cents) / 100}`} aria-label="Amount collected" style={{ maxWidth: 140 }} />}
+                            <button className="btn btn-xs" type="submit">Check in</button>
+                          </form>
+                          <form action={markNoShow}>
+                            <input type="hidden" name="venue_id" value={venueId} />
+                            <input type="hidden" name="id" value={b.id} />
+                            <button className="btn btn-xs btn-outline" type="submit">No-show</button>
+                          </form>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      <div className="app-grid">
+        <form action={walkIn} className="app-card form-grid">
+          <h3>Add a walk-in or phone booking</h3>
+          <input type="hidden" name="venue_id" value={venueId} />
+          <input type="hidden" name="date" value={date} />
+          <div className="field-row">
+            <div className="field"><label htmlFor="wi-court">Court</label>
+              <select id="wi-court" name="resource_id" className="select" required>{courts.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
+            </div>
+            <div className="field"><label htmlFor="wi-start">Start</label><input id="wi-start" name="start" type="time" step={900} className="input" required /></div>
+          </div>
+          <div className="field-row">
+            <div className="field"><label htmlFor="wi-dur">Duration (minutes)</label><input id="wi-dur" name="duration" type="number" min={15} step={15} defaultValue={60} className="input" /></div>
+            <div className="field"><label htmlFor="wi-paid">Paid now (₱, optional)</label><input id="wi-paid" name="paid" inputMode="decimal" className="input" /></div>
+          </div>
+          <div className="field-row">
+            <div className="field"><label htmlFor="wi-name">Name</label><input id="wi-name" name="customer_name" className="input" /></div>
+            <div className="field"><label htmlFor="wi-phone">Phone (optional)</label><input id="wi-phone" name="customer_phone" className="input" inputMode="tel" /></div>
+          </div>
+          <button className="btn btn-sm" type="submit">Add booking</button>
+        </form>
+        {canManage && (
+          <div className="app-stack">
+            <form action={addBlock} className="app-card form-grid">
+              <h3>Block time</h3>
+              <input type="hidden" name="venue_id" value={venueId} />
+              <input type="hidden" name="date" value={date} />
+              <div className="field"><label htmlFor="bl-court">Court</label>
+                <select id="bl-court" name="resource_id" className="select" required>{courts.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
+              </div>
+              <div className="field-row">
+                <div className="field"><label htmlFor="bl-s">From</label><input id="bl-s" name="start" type="time" step={900} className="input" required /></div>
+                <div className="field"><label htmlFor="bl-e">To</label><input id="bl-e" name="end" type="time" step={900} className="input" required /></div>
+              </div>
+              <div className="field"><label htmlFor="bl-r">Reason</label><input id="bl-r" name="reason" className="input" placeholder="Maintenance, private event…" /></div>
+              <button className="btn btn-sm btn-outline" type="submit">Block</button>
+            </form>
+            {blocks.length > 0 && (
+              <section className="app-card">
+                <h3>Blocks on this day</h3>
+                <ul className="plain-list">
+                  {blocks.map((b) => (
+                    <li key={b.id} className="inline-form">
+                      <span style={{ marginRight: "auto" }}>{courtName(b.resource_id)} · {formatRange(b.start_min, b.end_min)} · {b.reason}</span>
+                      <form action={removeBlock}>
+                        <input type="hidden" name="venue_id" value={venueId} />
+                        <input type="hidden" name="date" value={date} />
+                        <input type="hidden" name="id" value={b.id} />
+                        <button className="btn btn-xs btn-outline" type="submit">Remove</button>
+                      </form>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
+async function Payments({ venueId }: { venueId: string }) {
+  const v = await q1<{ allow_pay_at_venue: boolean; paymongo_public_key: string | null; paymongo_livemode: boolean | null; paymongo_connected_at: string | null }>(
+    "SELECT allow_pay_at_venue, paymongo_public_key, paymongo_livemode, paymongo_connected_at FROM venue WHERE id=$1",
+    [venueId],
+  );
+  const [m] = await q<{ bookings: number; collected: number; fees: number }>(
+    `SELECT count(*)::int AS bookings, coalesce(sum(paid_cents),0)::int AS collected, coalesce(sum(platform_fee_cents),0)::int AS fees
+       FROM booking WHERE venue_id=$1 AND status IN ('confirmed','completed') AND date_trunc('month', confirmed_at) = date_trunc('month', now())`,
+    [venueId],
+  );
+  return (
+    <>
+      <div className="stat-row">
+        <div className="stat"><b>{m.bookings}</b><span>Confirmed bookings this month</span></div>
+        <div className="stat"><b>{peso(m.collected)}</b><span>Recorded as paid this month</span></div>
+        <div className="stat"><b>{peso(m.fees)}</b><span>Playbook booking fees this month (billed monthly)</span></div>
+      </div>
+      <section className="app-card">
+        <h2>Online payments with PayMongo</h2>
+        <p>Players pay <strong>you directly</strong> through your own PayMongo account (GCash, Maya, cards, GrabPay, QR Ph). Money goes straight to your PayMongo balance; Playbook never holds it.</p>
+        {v?.paymongo_connected_at ? (
+          <>
+            <div className="alert alert-ok">Connected in <strong>{v.paymongo_livemode ? "live" : "test"}</strong> mode since {when(v.paymongo_connected_at)} · key {v.paymongo_public_key?.slice(0, 12)}…</div>
+            {!v.paymongo_livemode && <p className="hint">Test mode: no real money moves. Connect your live keys when you&apos;re ready to accept real payments.</p>}
+            <form action={disconnectPaymongo}>
+              <input type="hidden" name="venue_id" value={venueId} />
+              <button className="btn btn-sm btn-outline" type="submit">Disconnect</button>
+            </form>
+          </>
+        ) : null}
+        <form action={connectPaymongo} className="form-section form-grid">
+          <h3>{v?.paymongo_connected_at ? "Replace keys" : "Connect your account"}</h3>
+          <p className="hint">In the PayMongo dashboard open Developers → API keys. Paste both keys from the same mode. Your secret key is encrypted and only used to create checkouts, confirm payments and process refunds.</p>
+          <input type="hidden" name="venue_id" value={venueId} />
+          <div className="field"><label htmlFor="pk">Public key</label><input id="pk" name="public_key" className="input" placeholder="pk_test_… or pk_live_…" autoComplete="off" required /></div>
+          <div className="field"><label htmlFor="sk">Secret key</label><input id="sk" name="secret_key" type="password" className="input" placeholder="sk_test_… or sk_live_…" autoComplete="off" required /></div>
+          <button className="btn btn-sm" type="submit">Connect PayMongo</button>
+        </form>
+      </section>
+      <form action={setPayAtVenue} className="app-card form-grid">
+        <h2>Pay at the venue</h2>
+        <p>{v?.allow_pay_at_venue ? "On: players can confirm a booking now and pay at the front desk." : "Off: players must pay online to confirm."}</p>
+        <input type="hidden" name="venue_id" value={venueId} />
+        <input type="hidden" name="allow" value={v?.allow_pay_at_venue ? "0" : "1"} />
+        <button className="btn btn-sm btn-outline" type="submit">{v?.allow_pay_at_venue ? "Require online payment" : "Allow pay at the venue"}</button>
+      </form>
+    </>
   );
 }

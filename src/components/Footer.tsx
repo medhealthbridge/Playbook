@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { COPY } from "@/content/copy";
 import { useBooking } from "@/lib/ui/BookingLauncher";
 import { Wordmark } from "./art/Wordmark";
@@ -52,6 +53,9 @@ export function Footer() {
 
 export function MobileBar() {
   const { open } = useBooking();
+  const path = usePathname();
+  // Marketing pages only; the real app pages have their own booking actions.
+  if (path !== "/") return null;
   return (
     <div className="mobile-bar">
       <div className="txt">

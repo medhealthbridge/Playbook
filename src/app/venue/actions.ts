@@ -5,6 +5,10 @@ import { audit, q, q1, tx } from "@/lib/server/db";
 import { METRO_AREAS, int, pesoToCents, slugify, str } from "@/lib/server/form";
 import { requireUser, requireVenueRole, type VenueRole } from "@/lib/server/session";
 import { SPORTS } from "@/content/sports";
+import { BookingError, confirmBooking, venueById, venueResources } from "@/lib/server/bookings";
+import { makeRef, priceCents } from "@/lib/booking/engine";
+import { encrypt, decrypt } from "@/lib/server/crypto";
+import { PaymongoError, createWebhook, disableWebhook, keyMode, verifySecretKey } from "@/lib/server/paymongo";
 
 const SPORT_IDS = new Set(SPORTS.map((s) => s.id));
 const KIND_FOR: Record<string, string> = { billiards: "table", "table-tennis": "table", futsal: "pitch" };
@@ -156,4 +160,172 @@ export async function removeMember(formData: FormData) {
   await audit(user.id, "member.remove", "venue", venueId, { userId });
   revalidatePath(`/venue/${venueId}`);
   back(path, { ok: "Access removed." });
+}
+
+// ---------------------------------------------------------------- Phase 2: calendar
+
+const cal = (venueId: string, date: string) => `/venue/${venueId}?tab=calendar&date=${date}`;
+const hm = (s: string) => {
+  const m = /^(\d{2}):(\d{2})$/.exec(s);
+  return m ? Number(m[1]) * 60 + Number(m[2]) : NaN;
+};
+
+export async function walkIn(formData: FormData) {
+  const venueId = str(formData, "venue_id", 60);
+  const date = str(formData, "date", 10);
+  const { user } = await requireVenueRole(venueId, "staff");
+  const path = cal(venueId, date);
+  const resourceId = str(formData, "resource_id", 60);
+  const start = hm(str(formData, "start", 5));
+  const dur = int(formData, "duration", 60);
+  const name = str(formData, "customer_name", 80) || "Walk-in";
+  const phone = str(formData, "customer_phone", 30);
+  const paid = pesoToCents(formData, "paid");
+  const r = (await venueResources(venueId)).find((x) => x.id === resourceId);
+  if (!r) back(path, { error: "Choose a court." });
+  if (!Number.isFinite(start) || dur < 15 || dur > 600) back(path, { error: "Check the start time and duration." });
+  const price = priceCents(r!.hourly_rate_cents, dur);
+  try {
+    const row = await q1<{ id: string }>(
+      `INSERT INTO booking (ref, venue_id, resource_id, customer_name, customer_phone, sport, date, start_min, end_min, status, source, price_cents, deposit_cents, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'held','walk_in',$10,0,$11) RETURNING id`,
+      [makeRef(), venueId, r!.id, name, phone || null, r!.sports[0], date, start, start + dur, price, user.id],
+    );
+    await confirmBooking(row!.id, { method: Number.isFinite(paid) && paid > 0 ? "cash" : "at_venue", paidCents: Number.isFinite(paid) ? paid : 0, actorId: user.id });
+  } catch (e) {
+    const code = (e as { code?: string }).code;
+    if (code === "23P01") back(path, { error: "That court is already booked at that time." });
+    if (e instanceof BookingError) back(path, { error: e.message });
+    throw e;
+  }
+  revalidatePath(`/venue/${venueId}`);
+  back(path, { ok: `Walk-in added for ${name}.` });
+}
+
+async function staffBooking(formData: FormData) {
+  const venueId = str(formData, "venue_id", 60);
+  const id = str(formData, "id", 60);
+  const { user } = await requireVenueRole(venueId, "staff");
+  const b = await q1<{ id: string; date: string; status: string; price_cents: number; paid_cents: number }>(
+    "SELECT id, to_char(date,'YYYY-MM-DD') AS date, status, price_cents, paid_cents FROM booking WHERE id=$1 AND venue_id=$2",
+    [id, venueId],
+  );
+  if (!b) back(`/venue/${venueId}?tab=calendar`, { error: "Booking not found." });
+  return { user, venueId, b: b! };
+}
+
+export async function checkIn(formData: FormData) {
+  const { user, venueId, b } = await staffBooking(formData);
+  const collected = pesoToCents(formData, "collected");
+  if (b.status !== "confirmed") back(cal(venueId, b.date), { error: "Only confirmed bookings can be checked in." });
+  const add = Number.isFinite(collected) ? collected : 0;
+  await q(
+    `UPDATE booking SET checked_in_at=coalesce(checked_in_at, now()), paid_cents=paid_cents+$2,
+            payment_status = CASE WHEN paid_cents+$2 >= price_cents THEN 'paid' WHEN paid_cents+$2 > 0 THEN 'deposit_paid' ELSE payment_status END,
+            updated_at=now() WHERE id=$1`,
+    [b.id, add],
+  );
+  await audit(user.id, "booking.check_in", "booking", b.id, { collected: add });
+  revalidatePath(`/venue/${venueId}`);
+  back(cal(venueId, b.date), { ok: `Checked in${add ? `, collected ₱${(add / 100).toLocaleString("en-PH")}` : ""}.` });
+}
+
+export async function markNoShow(formData: FormData) {
+  const { user, venueId, b } = await staffBooking(formData);
+  if (b.status !== "confirmed") back(cal(venueId, b.date), { error: "Only confirmed bookings can be marked as no-show." });
+  await q("UPDATE booking SET status='no_show', updated_at=now() WHERE id=$1", [b.id]);
+  await audit(user.id, "booking.no_show", "booking", b.id);
+  revalidatePath(`/venue/${venueId}`);
+  back(cal(venueId, b.date), { ok: "Marked as no-show." });
+}
+
+export async function addBlock(formData: FormData) {
+  const venueId = str(formData, "venue_id", 60);
+  const date = str(formData, "date", 10);
+  const { user } = await requireVenueRole(venueId, "manager");
+  const path = cal(venueId, date);
+  const resourceId = str(formData, "resource_id", 60);
+  const s = hm(str(formData, "start", 5));
+  const e = hm(str(formData, "end", 5));
+  const reason = str(formData, "reason", 120) || "Maintenance";
+  if (!(await venueResources(venueId, false)).some((r) => r.id === resourceId)) back(path, { error: "Choose a court." });
+  if (!(s < e)) back(path, { error: "End must be after start." });
+  const clash = await q1<{ n: number }>(
+    "SELECT count(*)::int AS n FROM booking WHERE resource_id=$1 AND date=$2 AND status IN ('held','confirmed') AND start_min < $4 AND end_min > $3",
+    [resourceId, date, s, e],
+  );
+  if (clash!.n > 0) back(path, { error: "There are bookings in that window. Move or cancel them first." });
+  await q("INSERT INTO resource_block (resource_id, date, start_min, end_min, reason, created_by) VALUES ($1,$2,$3,$4,$5,$6)", [resourceId, date, s, e, reason, user.id]);
+  await audit(user.id, "block.create", "resource", resourceId, { date, s, e, reason });
+  revalidatePath(`/venue/${venueId}`);
+  back(path, { ok: "Time blocked." });
+}
+
+export async function removeBlock(formData: FormData) {
+  const venueId = str(formData, "venue_id", 60);
+  const date = str(formData, "date", 10);
+  const id = str(formData, "id", 60);
+  const { user } = await requireVenueRole(venueId, "manager");
+  await q("DELETE FROM resource_block b USING resource r WHERE b.id=$1 AND r.id=b.resource_id AND r.venue_id=$2", [id, venueId]);
+  await audit(user.id, "block.remove", "venue", venueId, { id });
+  revalidatePath(`/venue/${venueId}`);
+  back(cal(venueId, date), { ok: "Block removed." });
+}
+
+// ---------------------------------------------------------------- Phase 2: payments
+export async function connectPaymongo(formData: FormData) {
+  const venueId = str(formData, "venue_id", 60);
+  const { user } = await requireVenueRole(venueId, "owner");
+  const path = `/venue/${venueId}?tab=payments`;
+  const pk = str(formData, "public_key", 200);
+  const sk = str(formData, "secret_key", 200);
+  const pkMode = keyMode(pk);
+  const skMode = keyMode(sk);
+  if (!pk.startsWith("pk_") || !sk.startsWith("sk_") || !pkMode || pkMode !== skMode) back(path, { error: "Paste your PayMongo public key (pk_…) and secret key (sk_…) from the same mode (test or live)." });
+  const base = process.env.BETTER_AUTH_URL || "https://playbook.databridgesol.space";
+  try {
+    await verifySecretKey(sk);
+    const old = await q1<{ id: string | null; s: string | null }>("SELECT paymongo_webhook_id AS id, paymongo_secret_enc AS s FROM venue WHERE id=$1", [venueId]);
+    if (old?.id && old.s) await disableWebhook(decrypt(old.s), old.id);
+    const wh = await createWebhook(sk, `${base}/api/paymongo/webhook/${venueId}`);
+    await q(
+      `UPDATE venue SET paymongo_public_key=$2, paymongo_secret_enc=$3, paymongo_webhook_id=$4, paymongo_webhook_secret_enc=$5,
+              paymongo_livemode=$6, paymongo_connected_at=now(), updated_at=now() WHERE id=$1`,
+      [venueId, pk, encrypt(sk), wh.id, encrypt(wh.secretKey), skMode === "live"],
+    );
+  } catch (e) {
+    if (e instanceof PaymongoError) back(path, { error: `PayMongo said: ${e.message}` });
+    console.error("paymongo connect failed", e);
+    back(path, { error: "Couldn't reach PayMongo. Please try again." });
+  }
+  await audit(user.id, "payments.connect", "venue", venueId, { mode: skMode });
+  revalidatePath(`/venue/${venueId}`);
+  back(path, { ok: `PayMongo connected (${skMode} mode). Players can now pay you online.` });
+}
+
+export async function disconnectPaymongo(formData: FormData) {
+  const venueId = str(formData, "venue_id", 60);
+  const { user } = await requireVenueRole(venueId, "owner");
+  const old = await q1<{ id: string | null; s: string | null }>("SELECT paymongo_webhook_id AS id, paymongo_secret_enc AS s FROM venue WHERE id=$1", [venueId]);
+  if (old?.id && old.s) await disableWebhook(decrypt(old.s), old.id).catch(() => {});
+  await q(
+    `UPDATE venue SET paymongo_public_key=NULL, paymongo_secret_enc=NULL, paymongo_webhook_id=NULL, paymongo_webhook_secret_enc=NULL,
+            paymongo_livemode=NULL, paymongo_connected_at=NULL, updated_at=now() WHERE id=$1`,
+    [venueId],
+  );
+  await audit(user.id, "payments.disconnect", "venue", venueId);
+  revalidatePath(`/venue/${venueId}`);
+  back(`/venue/${venueId}?tab=payments`, { ok: "PayMongo disconnected." });
+}
+
+export async function setPayAtVenue(formData: FormData) {
+  const venueId = str(formData, "venue_id", 60);
+  const { user } = await requireVenueRole(venueId, "manager");
+  const allow = str(formData, "allow") === "1";
+  const v = await venueById(venueId);
+  if (!allow && !v?.paymongo_connected_at) back(`/venue/${venueId}?tab=payments`, { error: "Connect PayMongo before turning off pay-at-venue, or players can't book." });
+  await q("UPDATE venue SET allow_pay_at_venue=$2, updated_at=now() WHERE id=$1", [venueId, allow]);
+  await audit(user.id, "payments.pay_at_venue", "venue", venueId, { allow });
+  revalidatePath(`/venue/${venueId}`);
+  back(`/venue/${venueId}?tab=payments`, { ok: allow ? "Players can confirm now and pay at the venue." : "Players must pay online to confirm." });
 }

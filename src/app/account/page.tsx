@@ -45,7 +45,7 @@ export default async function AccountPage({ searchParams }: { searchParams: Prom
               {bookings.length === 0 ? (
                 <div className="empty">
                   <p>No bookings yet.</p>
-                  <Link href="/#sports" className="btn btn-sm">Find a court</Link>
+                  <Link href="/venues" className="btn btn-sm">Find a court</Link>
                 </div>
               ) : (
                 <table className="ledger">
@@ -54,8 +54,8 @@ export default async function AccountPage({ searchParams }: { searchParams: Prom
                     {bookings.map((b) => (
                       <tr key={b.id}>
                         <td>{b.date}<br /><span className="hint">{hm(b.start_min)}–{hm(b.end_min)}</span></td>
-                        <td>{b.venue}<br /><span className="hint">{b.court} · {b.ref}</span></td>
-                        <td>{b.status}</td>
+                        <td><Link href={`/bookings/${b.id}`}>{b.venue}</Link><br /><span className="hint">{b.court} · {b.ref}</span></td>
+                        <td>{b.status === "held" ? "waiting" : b.status.replace("_", "-")}</td>
                         <td>{peso(b.price_cents)}</td>
                       </tr>
                     ))}

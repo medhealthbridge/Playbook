@@ -147,3 +147,31 @@ CREATE TABLE IF NOT EXISTS audit_log (
 );
 CREATE INDEX IF NOT EXISTS audit_log_created_idx ON audit_log (created_at DESC);
 CREATE INDEX IF NOT EXISTS audit_log_target_idx ON audit_log (target_type, target_id);
+
+-- ---------------------------------------------------------------- Phase 2
+-- Venue payment settings. PayMongo secrets are AES-256-GCM encrypted by the app.
+ALTER TABLE venue ADD COLUMN IF NOT EXISTS allow_pay_at_venue boolean NOT NULL DEFAULT true;
+ALTER TABLE venue ADD COLUMN IF NOT EXISTS paymongo_public_key text;
+ALTER TABLE venue ADD COLUMN IF NOT EXISTS paymongo_secret_enc text;
+ALTER TABLE venue ADD COLUMN IF NOT EXISTS paymongo_webhook_id text;
+ALTER TABLE venue ADD COLUMN IF NOT EXISTS paymongo_webhook_secret_enc text;
+ALTER TABLE venue ADD COLUMN IF NOT EXISTS paymongo_livemode boolean;
+ALTER TABLE venue ADD COLUMN IF NOT EXISTS paymongo_connected_at timestamptz;
+
+-- Booking payment tracking.
+ALTER TABLE booking ADD COLUMN IF NOT EXISTS pay_method text CHECK (pay_method IN ('online', 'at_venue', 'cash', 'gcash_manual'));
+ALTER TABLE booking ADD COLUMN IF NOT EXISTS checkout_session_id text;
+ALTER TABLE booking ADD COLUMN IF NOT EXISTS payment_id text;
+ALTER TABLE booking ADD COLUMN IF NOT EXISTS refund_cents int NOT NULL DEFAULT 0;
+ALTER TABLE booking ADD COLUMN IF NOT EXISTS confirmed_at timestamptz;
+CREATE INDEX IF NOT EXISTS booking_checkout_idx ON booking (checkout_session_id);
+
+-- Processed webhook events (idempotency).
+CREATE TABLE IF NOT EXISTS payment_event (
+  id          text PRIMARY KEY,
+  venue_id    text REFERENCES venue(id) ON DELETE CASCADE,
+  type        text NOT NULL,
+  booking_id  text REFERENCES booking(id) ON DELETE SET NULL,
+  payload     jsonb NOT NULL,
+  received_at timestamptz NOT NULL DEFAULT now()
+);

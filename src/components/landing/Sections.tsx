@@ -354,7 +354,8 @@ export function ForVenuesSection() {
           <div style={{ display: "grid", gap: 14 }}>
             <p>{COPY.forVenues.body}</p>
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-              <Link href="/demo?role=venue" className="btn btn-sm">{COPY.forVenues.cta}</Link>
+              <Link href="/venue/new" className="btn btn-sm">List your venue</Link>
+              <Link href="/demo?role=venue" className="btn btn-sm btn-ghost">{COPY.forVenues.cta}</Link>
               <a href="#plans" className="btn btn-sm btn-ghost">Venue plans</a>
             </div>
           </div>

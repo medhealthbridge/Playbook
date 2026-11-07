@@ -2814,3 +2814,187 @@ html[data-motion="reduced"] .dialog[open] {
     transition: none;
   }
 }
+
+/* ---------------- auth ---------------- */
+.auth-shell {
+  min-height: 100vh;
+  min-height: 100svh;
+  display: grid;
+  place-items: center;
+  padding: calc(var(--nav-h) + 24px) var(--gutter) 48px;
+  background:
+    radial-gradient(60% 50% at 50% 30%, rgba(215, 255, 63, 0.08), transparent 70%),
+    var(--charcoal);
+}
+.auth-card {
+  width: min(460px, 100%);
+  background: var(--paper);
+  color: var(--charcoal);
+  border-radius: var(--radius);
+  padding: clamp(20px, 5vw, 32px);
+  display: grid;
+  gap: 16px;
+  box-shadow: 0 40px 90px -40px rgba(0, 0, 0, 0.8);
+}
+.auth-card h1 {
+  font-size: clamp(2rem, 6vw, 2.6rem);
+}
+.auth-sub {
+  margin: -6px 0 0;
+  color: var(--muted);
+}
+.auth-form {
+  display: grid;
+  gap: 14px;
+}
+.auth-form .btn {
+  width: 100%;
+  justify-content: center;
+}
+.auth-link,
+.auth-foot a {
+  color: var(--charcoal);
+  font-weight: 600;
+}
+.auth-link {
+  justify-self: center;
+  font-size: 0.9rem;
+}
+.auth-foot {
+  border-top: 1px solid var(--line-light);
+  padding-top: 14px;
+  font-size: 0.92rem;
+  color: var(--muted);
+  text-align: center;
+}
+.auth-card .input:focus {
+  border-color: var(--charcoal);
+  box-shadow: 0 0 0 3px rgba(16, 23, 19, 0.15);
+}
+
+/* ---------------- portal (account / venue / admin) ---------------- */
+.portal-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: end;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding-bottom: 18px;
+}
+.portal-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+a[role="tab"] {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+}
+.btn-outline {
+  background: transparent;
+  color: var(--charcoal);
+  border: 1.5px solid var(--charcoal);
+}
+.btn-outline:hover {
+  background: var(--charcoal);
+  color: var(--white);
+}
+.plain-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+.plain-list a {
+  font-weight: 700;
+  color: var(--charcoal);
+}
+.stat-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+}
+.stat {
+  border-radius: 12px;
+  border: 1px solid var(--line-light);
+  background: var(--paper);
+  padding: 14px 16px;
+  display: grid;
+  gap: 4px;
+}
+.stat b {
+  font-family: var(--font-display);
+  font-size: 2rem;
+  line-height: 1;
+}
+.stat span {
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+.table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.92rem;
+}
+.data-table th,
+.data-table td {
+  text-align: left;
+  padding: 10px 8px;
+  border-bottom: 1px solid var(--line-light);
+  vertical-align: top;
+}
+.data-table th {
+  font-size: 0.75rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.inline-form {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.inline-form .input,
+.inline-form .select {
+  min-height: 38px;
+  width: auto;
+  flex: 1 1 140px;
+  font-size: 0.9rem;
+}
+.form-grid {
+  display: grid;
+  gap: 14px;
+}
+.form-section {
+  display: grid;
+  gap: 12px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line-light);
+}
+.form-section:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+.court-row {
+  display: grid;
+  grid-template-columns: 2fr 1.4fr 1fr 1fr;
+  gap: 8px;
+}
+@media (max-width: 640px) {
+  .court-row {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+.textarea {
+  min-height: 90px;
+  padding: 12px 14px;
+  font: inherit;
+}

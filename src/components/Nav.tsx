@@ -3,6 +3,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { COPY } from "@/content/copy";
+import { useSession } from "@/lib/auth/client";
 import { useBooking } from "@/lib/ui/BookingLauncher";
 import { useMotion } from "@/lib/ui/MotionProvider";
 import { Wordmark } from "./art/Wordmark";
@@ -11,6 +12,7 @@ export function Nav() {
   const [solid, setSolid] = useState(false);
   const { open } = useBooking();
   const { reduced, setReduced } = useMotion();
+  const { data: session } = useSession();
   const path = usePathname();
   const onHome = path === "/";
 
@@ -51,9 +53,15 @@ export function Nav() {
             <span className="label">Reduce motion</span>
             <span className="sr-only">{reduced ? "(on)" : "(off)"}</span>
           </button>
-          <Link href="/demo?role=player" className="nav-signin">
-            Sign in
-          </Link>
+          {session ? (
+            <Link href="/account" className="nav-signin">
+              Account
+            </Link>
+          ) : (
+            <Link href="/login" className="nav-signin">
+              Sign in
+            </Link>
+          )}
           <button type="button" className="btn btn-sm nav-book" onClick={() => open()}>
             Book a slot
           </button>

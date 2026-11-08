@@ -7,6 +7,7 @@ import { useSession } from "@/lib/auth/client";
 import { useBooking } from "@/lib/ui/BookingLauncher";
 import { useMotion } from "@/lib/ui/MotionProvider";
 import { Wordmark } from "./art/Wordmark";
+import { ThemeToggle } from "./ThemeToggle";
 
 export function Nav() {
   const [solid, setSolid] = useState(false);
@@ -41,6 +42,7 @@ export function Nav() {
           </ul>
         </nav>
         <div className="nav-actions">
+          <ThemeToggle />
           <button
             type="button"
             className="motion-toggle"

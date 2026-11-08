@@ -3,6 +3,7 @@ import { Barlow_Condensed, Inter } from "next/font/google";
 import type { ReactNode } from "react";
 import "./globals.css";
 import { Providers } from "./providers";
+import { THEME_INIT } from "@/lib/ui/theme";
 
 const barlow = Barlow_Condensed({
   subsets: ["latin"],
@@ -43,7 +44,10 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en-PH" className={`${barlow.variable} ${inter.variable}`} data-motion="full">
+    <html lang="en-PH" className={`${barlow.variable} ${inter.variable}`} data-motion="full" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT }} />
+      </head>
       <body>
         <a className="skip-link" href="#main">
           Skip to content

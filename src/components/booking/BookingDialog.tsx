@@ -394,7 +394,7 @@ export function BookingDialog() {
               <div className="legend" style={{ marginBottom: 10 }}>
                 <span><i style={{ background: "var(--lime)", borderColor: "var(--charcoal)" }} />Selected</span>
                 <span><i />Available</span>
-                <span><i style={{ background: "repeating-linear-gradient(-45deg,#f2f4ef 0 3px,#dfe5dc 3px 6px)" }} />Booked / maintenance / passed</span>
+                <span><i style={{ background: "repeating-linear-gradient(-45deg,var(--hatch-a) 0 3px,var(--line-light) 3px 6px)" }} />Booked / maintenance / passed</span>
               </div>
               {slotsLoading ? (
                 <div className="alert alert-info" role="status"><span className="spinner" /> Checking live availability…</div>

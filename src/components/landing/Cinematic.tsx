@@ -358,7 +358,7 @@ function FinalCTA({ finalRef, staticMode }: { finalRef?: React.RefObject<HTMLEle
       <div className="final-sticky">
         <div className="final-copy">
           {staticMode && (
-            <div style={{ display: "flex", justifyContent: "center", marginBottom: 28, color: "var(--white)" }}>
+            <div style={{ display: "flex", justifyContent: "center", marginBottom: 28, color: "var(--day)" }}>
               <Wordmark height={56} />
             </div>
           )}

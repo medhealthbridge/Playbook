@@ -19,6 +19,29 @@
   --danger-dark: #ff8f85;
   --ok: #2f7d32;
 
+  /* Fixed colours: the same in light and dark mode (dark sections, text on lime). */
+  --night: #101713;
+  --night-2: #18211c;
+  --night-3: #222d27;
+  --day: #f5f7f0;
+
+  /* Theme tints (light values; dark values below). */
+  --tint: #eef1ea;
+  --lime-tint: #f2fbd1;
+  --shade: rgba(16, 23, 19, 0.07);
+  --shade-faint: rgba(16, 23, 19, 0.04);
+  --shade-strong: rgba(16, 23, 19, 0.25);
+  --shade-ring: rgba(16, 23, 19, 0.15);
+  --ok-bg: #dff3d8;
+  --ok-fg: #1d5420;
+  --warn-bg: #fff1d6;
+  --warn-fg: #6b4500;
+  --bad-bg: #fde2df;
+  --bad-fg: #8a1f17;
+  --disabled-fg: #9aa49d;
+  --hatch-a: #f2f4ef;
+  --hatch-b: #eaeee7;
+
   --font-display: var(--font-barlow), "Barlow Condensed", "Arial Narrow", sans-serif;
   --font-body: var(--font-inter), Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
 
@@ -29,6 +52,62 @@
   --nav-h: 64px;
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
   color-scheme: light;
+}
+
+/* ---------------- dark mode ----------------
+   --white / --paper are the light surfaces, --charcoal is text on them.
+   Dark mode swaps those; sections that are always dark use --night / --day. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --white: #0c120f;
+    --paper: #151d18;
+    --charcoal: #eef2ea;
+    --muted: #a9b5ad;
+    --line-light: #2c3830;
+    --danger: #ff8f85;
+    --ok: #86d48a;
+    --tint: #1d2621;
+    --lime-tint: #26301a;
+    --shade: rgba(245, 247, 240, 0.08);
+    --shade-faint: rgba(245, 247, 240, 0.05);
+    --shade-strong: rgba(245, 247, 240, 0.3);
+    --shade-ring: rgba(245, 247, 240, 0.2);
+    --ok-bg: #1e3a1f;
+    --ok-fg: #b6eab0;
+    --warn-bg: #3a2c10;
+    --warn-fg: #ffd98a;
+    --bad-bg: #3d1a17;
+    --bad-fg: #ffb3aa;
+    --disabled-fg: #66726a;
+    --hatch-a: #19211c;
+    --hatch-b: #1f2822;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --white: #0c120f;
+  --paper: #151d18;
+  --charcoal: #eef2ea;
+  --muted: #a9b5ad;
+  --line-light: #2c3830;
+  --danger: #ff8f85;
+  --ok: #86d48a;
+  --tint: #1d2621;
+  --lime-tint: #26301a;
+  --shade: rgba(245, 247, 240, 0.08);
+  --shade-faint: rgba(245, 247, 240, 0.05);
+  --shade-strong: rgba(245, 247, 240, 0.3);
+  --shade-ring: rgba(245, 247, 240, 0.2);
+  --ok-bg: #1e3a1f;
+  --ok-fg: #b6eab0;
+  --warn-bg: #3a2c10;
+  --warn-fg: #ffd98a;
+  --bad-bg: #3d1a17;
+  --bad-fg: #ffb3aa;
+  --disabled-fg: #66726a;
+  --hatch-a: #19211c;
+  --hatch-b: #1f2822;
+  color-scheme: dark;
 }
 
 *,
@@ -112,7 +191,7 @@ p {
   top: -60px;
   z-index: 200;
   background: var(--lime);
-  color: var(--charcoal);
+  color: var(--night);
   padding: 10px 16px;
   border-radius: var(--radius-sm);
   font-weight: 700;
@@ -132,7 +211,7 @@ p {
 /* ---------------- buttons ---------------- */
 .btn {
   --bg: var(--lime);
-  --fg: var(--charcoal);
+  --fg: var(--night);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -168,7 +247,7 @@ p {
 }
 .btn-ghost {
   --bg: transparent;
-  --fg: var(--white);
+  --fg: var(--day);
   border-color: rgba(245, 247, 240, 0.35);
 }
 .btn-ghost:hover {
@@ -180,7 +259,7 @@ p {
 .app-body .btn-ghost,
 .sport-panel .btn-ghost {
   --fg: var(--charcoal);
-  border-color: rgba(16, 23, 19, 0.25);
+  border-color: var(--shade-strong);
 }
 .light .btn-ghost:hover,
 .on-light .btn-ghost:hover,
@@ -238,22 +317,22 @@ p {
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  background: rgba(16, 23, 19, 0.07);
+  background: var(--shade);
   color: var(--charcoal);
   white-space: nowrap;
 }
 .dark .badge,
 .badge.on-dark {
   background: rgba(245, 247, 240, 0.1);
-  color: var(--white);
+  color: var(--day);
 }
 .badge-lime {
   background: var(--lime) !important;
-  color: var(--charcoal) !important;
+  color: var(--night) !important;
 }
 .badge-orange {
   background: var(--orange) !important;
-  color: var(--charcoal) !important;
+  color: var(--night) !important;
 }
 .badge-demo {
   background: transparent !important;
@@ -262,20 +341,20 @@ p {
   opacity: 0.85;
 }
 .badge-ok {
-  background: #dff3d8 !important;
-  color: #1d5420 !important;
+  background: var(--ok-bg) !important;
+  color: var(--ok-fg) !important;
 }
 .badge-warn {
-  background: #fff1d6 !important;
-  color: #6b4500 !important;
+  background: var(--warn-bg) !important;
+  color: var(--warn-fg) !important;
 }
 .badge-bad {
-  background: #fde2df !important;
-  color: #8a1f17 !important;
+  background: var(--bad-bg) !important;
+  color: var(--bad-fg) !important;
 }
 .badge-muted {
-  background: #e8ece6 !important;
-  color: #3e4842 !important;
+  background: var(--tint) !important;
+  color: var(--muted) !important;
 }
 
 .chip {
@@ -301,12 +380,12 @@ p {
 .chip.is-selected {
   background: var(--lime);
   border-color: var(--charcoal);
-  color: var(--charcoal);
+  color: var(--night);
 }
 .chip[disabled] {
   cursor: not-allowed;
-  color: #9aa49d;
-  background: repeating-linear-gradient(-45deg, #f2f4ef 0 6px, #eaeee7 6px 12px);
+  color: var(--disabled-fg);
+  background: repeating-linear-gradient(-45deg, var(--hatch-a) 0 6px, var(--hatch-b) 6px 12px);
   text-decoration: line-through;
 }
 
@@ -330,7 +409,7 @@ p {
   height: var(--nav-h);
   display: flex;
   align-items: center;
-  color: var(--white);
+  color: var(--day);
   transition: background 0.3s, backdrop-filter 0.3s;
 }
 .nav.is-solid {
@@ -365,7 +444,7 @@ p {
   color: var(--muted-dark);
 }
 .nav-links a:hover {
-  color: var(--white);
+  color: var(--day);
   background: rgba(245, 247, 240, 0.07);
 }
 .nav-actions {
@@ -387,7 +466,7 @@ p {
   cursor: pointer;
 }
 .motion-toggle[aria-pressed="true"] {
-  color: var(--charcoal);
+  color: var(--night);
   background: var(--lime);
   border-color: var(--lime);
 }
@@ -443,8 +522,8 @@ p {
 /* ---------------- hero + journey ---------------- */
 .stage {
   position: relative;
-  background: var(--charcoal);
-  color: var(--white);
+  background: var(--night);
+  color: var(--day);
 }
 .canvas-layer {
   position: fixed;
@@ -465,7 +544,7 @@ p {
   inset: 0;
   background:
     radial-gradient(ellipse 60% 50% at 50% 70%, rgba(215, 255, 63, 0.08), transparent 70%),
-    linear-gradient(180deg, #0b100d 0%, var(--charcoal) 60%, #0b100d 100%);
+    linear-gradient(180deg, #0b100d 0%, var(--night) 60%, #0b100d 100%);
 }
 
 .journey,
@@ -629,7 +708,7 @@ p {
 .search-card .select {
   background-color: rgba(245, 247, 240, 0.06);
   border-color: rgba(245, 247, 240, 0.16);
-  color: var(--white);
+  color: var(--day);
 }
 .dark .select,
 .search-card .select {
@@ -651,7 +730,7 @@ p {
 .dialog .input:focus,
 .dialog .select:focus {
   border-color: var(--charcoal);
-  box-shadow: 0 0 0 3px rgba(16, 23, 19, 0.15);
+  box-shadow: 0 0 0 3px var(--shade-ring);
 }
 .field-row {
   display: grid;
@@ -763,7 +842,7 @@ html[data-motion="reduced"] .scroll-cue span.bar {
 .mini-chip.sel {
   background: var(--lime);
   border-color: var(--lime);
-  color: var(--charcoal);
+  color: var(--night);
 }
 .receipt {
   display: grid;
@@ -798,15 +877,15 @@ html[data-motion="reduced"] .scroll-cue span.bar {
   place-items: center;
   font-weight: 800;
   font-size: 0.8rem;
-  background: var(--charcoal-3);
-  border: 2px solid var(--charcoal);
+  background: var(--night-3);
+  border: 2px solid var(--night);
   margin-left: -8px;
-  color: var(--white);
+  color: var(--day);
 }
 .avatar:first-child {
   margin-left: 0;
   background: var(--lime);
-  color: var(--charcoal);
+  color: var(--night);
 }
 .amenities {
   display: flex;
@@ -829,7 +908,7 @@ html[data-motion="reduced"] .scroll-cue span.bar {
   border: 1px solid rgba(245, 247, 240, 0.1);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
-  color: var(--white);
+  color: var(--day);
   transition: opacity 0.4s, transform 0.4s var(--ease);
 }
 .scoreboard.is-hidden {
@@ -870,11 +949,11 @@ html[data-motion="reduced"] .scroll-cue span.bar {
   opacity: 0.7;
 }
 .scoreboard button:hover {
-  color: var(--white);
+  color: var(--day);
   background: rgba(245, 247, 240, 0.06);
 }
 .scoreboard button[aria-current="step"] {
-  color: var(--charcoal);
+  color: var(--night);
   background: var(--lime);
 }
 .scoreboard .bar {
@@ -924,7 +1003,7 @@ html[data-motion="reduced"] .scroll-cue span.bar {
   border-radius: var(--radius);
   overflow: hidden;
   border: 1px solid var(--line-dark);
-  background: var(--charcoal-2);
+  background: var(--night-2);
 }
 .static-hero {
   padding: calc(var(--nav-h) + 60px) 0 80px;
@@ -975,8 +1054,8 @@ html[data-motion="reduced"] .scroll-cue span.bar {
   background: var(--paper);
 }
 .section.dark {
-  background: var(--charcoal);
-  color: var(--white);
+  background: var(--night);
+  color: var(--day);
 }
 .section-head {
   display: flex;
@@ -1023,8 +1102,8 @@ html[data-motion="reduced"] .scroll-cue span.bar {
   min-height: 250px;
   padding: 18px;
   border-radius: var(--radius);
-  background: var(--charcoal);
-  color: var(--white);
+  background: var(--night);
+  color: var(--day);
   border: 0;
   text-align: left;
   cursor: pointer;
@@ -1099,7 +1178,7 @@ html[data-motion="reduced"] .scroll-cue span.bar {
   text-decoration: none;
   background:
     repeating-linear-gradient(90deg, transparent 0 79px, rgba(215, 255, 63, 0.07) 79px 80px),
-    var(--charcoal-2);
+    var(--night-2);
 }
 .sport-card.sport-cta::after {
   display: none;
@@ -1164,7 +1243,7 @@ html[data-motion="reduced"] .scroll-cue span.bar {
     content: "";
     position: absolute;
     inset: 0;
-    background: linear-gradient(180deg, rgba(16, 23, 19, 0.4) 0%, transparent 28%, transparent 68%, var(--charcoal) 100%);
+    background: linear-gradient(180deg, rgba(16, 23, 19, 0.4) 0%, transparent 28%, transparent 68%, var(--night) 100%);
   }
   .sport-card.has-photo:not(.featured) .illustrative {
     top: 46px;
@@ -1232,7 +1311,7 @@ html[data-motion="reduced"] .scroll-cue span.bar {
   flex-direction: column;
 }
 .feature .fig {
-  background: var(--charcoal);
+  background: var(--night);
   aspect-ratio: 16 / 10;
 }
 .feature .fig svg {
@@ -1382,7 +1461,7 @@ html[data-motion="reduced"] .scroll-cue span.bar {
   border-radius: 50%;
   border: 2px solid rgba(245, 247, 240, 0.75);
   background: rgba(10, 14, 12, 0.45);
-  color: var(--white, #f5f7f0);
+  color: var(--day);
   display: grid;
   place-items: center;
   cursor: pointer;
@@ -1413,7 +1492,7 @@ html[data-motion="reduced"] .scroll-cue span.bar {
   align-items: center;
   gap: 12px;
   padding: 12px 14px;
-  background: var(--charcoal-2);
+  background: var(--night-2);
   font-size: 0.88rem;
 }
 .player-bar .t {
@@ -1425,7 +1504,7 @@ html[data-motion="reduced"] .scroll-cue span.bar {
   height: 44px;
   border-radius: 50%;
   background: var(--lime);
-  color: var(--charcoal);
+  color: var(--night);
   border: 0;
   display: grid;
   place-items: center;
@@ -1459,7 +1538,7 @@ html[data-motion="reduced"] .scroll-cue span.bar {
   padding: 8px 14px;
   font-size: 0.78rem;
   color: var(--muted-dark);
-  background: var(--charcoal-2);
+  background: var(--night-2);
   border-top: 1px solid var(--line-dark);
 }
 .library {
@@ -1473,7 +1552,7 @@ html[data-motion="reduced"] .scroll-cue span.bar {
   align-items: center;
   padding: 10px;
   border-radius: 12px;
-  background: var(--charcoal-2);
+  background: var(--night-2);
   border: 1px solid var(--line-dark);
   text-align: left;
   color: inherit;
@@ -1530,7 +1609,7 @@ html[data-motion="reduced"] .scroll-cue span.bar {
   margin-bottom: 4px;
 }
 .rules li strong {
-  color: var(--white);
+  color: var(--day);
   display: block;
 }
 .states {
@@ -1558,7 +1637,7 @@ html[data-motion="reduced"] .scroll-cue span.bar {
 }
 .tool-card {
   border-radius: var(--radius);
-  background: var(--charcoal-2);
+  background: var(--night-2);
   border: 1px solid var(--line-dark);
   padding: 18px;
   display: grid;
@@ -1604,7 +1683,7 @@ html[data-motion="reduced"] .scroll-cue span.bar {
 }
 .blk.confirmed {
   background: var(--lime);
-  color: var(--charcoal);
+  color: var(--night);
 }
 .blk.held {
   background: transparent;
@@ -1663,7 +1742,7 @@ html[data-motion="reduced"] .scroll-cue span.bar {
   color: var(--muted-dark);
 }
 .workflow li b {
-  color: var(--white);
+  color: var(--day);
 }
 .workflow .n {
   width: 30px;
@@ -1687,7 +1766,7 @@ html[data-motion="reduced"] .scroll-cue span.bar {
   display: inline-flex;
   padding: 4px;
   border-radius: 12px;
-  background: #e7ebe4;
+  background: var(--tint);
   gap: 4px;
 }
 .tabs [role="tab"] {
@@ -1709,11 +1788,11 @@ html[data-motion="reduced"] .scroll-cue span.bar {
   color: var(--white);
 }
 .dark .tabs {
-  background: var(--charcoal-2);
+  background: var(--night-2);
 }
 .dark .tabs [role="tab"][aria-selected="true"] {
   background: var(--lime);
-  color: var(--charcoal);
+  color: var(--night);
 }
 .plan-grid {
   display: grid;
@@ -1888,7 +1967,7 @@ html[data-motion="reduced"] .scroll-cue span.bar {
 }
 .footer h4 {
   font-size: 1rem;
-  color: var(--white);
+  color: var(--day);
   letter-spacing: 0.08em;
   margin-bottom: 10px;
 }
@@ -1943,7 +2022,7 @@ html[data-motion="reduced"] .scroll-cue span.bar {
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
     border-top: 1px solid rgba(245, 247, 240, 0.08);
-    color: var(--white);
+    color: var(--day);
   }
   .mobile-bar .txt {
     font-size: 0.8rem;
@@ -1953,7 +2032,7 @@ html[data-motion="reduced"] .scroll-cue span.bar {
   }
   .mobile-bar .txt b {
     display: block;
-    color: var(--white);
+    color: var(--day);
     font-size: 0.92rem;
   }
   .mobile-bar .btn {
@@ -1999,8 +2078,8 @@ html[data-motion="reduced"] .dialog[open] {
   align-items: center;
   gap: 12px;
   padding: 16px 20px;
-  background: var(--charcoal);
-  color: var(--white);
+  background: var(--night);
+  color: var(--day);
 }
 .dialog-head h2 {
   font-size: 1.6rem;
@@ -2025,7 +2104,7 @@ html[data-motion="reduced"] .dialog[open] {
   display: flex;
   gap: 4px;
   padding: 0 20px 14px;
-  background: var(--charcoal);
+  background: var(--night);
 }
 .stepper span {
   flex: 1;
@@ -2124,23 +2203,23 @@ html[data-motion="reduced"] .dialog[open] {
   align-items: flex-start;
 }
 .alert-error {
-  background: #fde2df;
-  color: #6e1912;
+  background: var(--bad-bg);
+  color: var(--bad-fg);
 }
 .alert-warn {
-  background: #fff1d6;
-  color: #5a3a00;
+  background: var(--warn-bg);
+  color: var(--warn-fg);
 }
 .alert-info {
-  background: #e9eee6;
+  background: var(--tint);
   color: var(--charcoal);
 }
 .alert-ok {
-  background: #e3f7cf;
-  color: #1f4a0f;
+  background: var(--ok-bg);
+  color: var(--ok-fg);
 }
 .dark .alert-info {
-  background: var(--charcoal-2);
+  background: var(--night-2);
   color: var(--muted-dark);
 }
 .kv {
@@ -2235,8 +2314,8 @@ html[data-motion="reduced"] .dialog[open] {
   padding-top: var(--nav-h);
 }
 .app-top {
-  background: var(--charcoal);
-  color: var(--white);
+  background: var(--night);
+  color: var(--day);
   padding: 28px 0 0;
 }
 .app-top h1 {
@@ -2263,8 +2342,8 @@ html[data-motion="reduced"] .dialog[open] {
   cursor: pointer;
 }
 .role-switch [role="tab"][aria-selected="true"] {
-  background: var(--white);
-  color: var(--charcoal);
+  background: var(--day);
+  color: var(--night);
 }
 .app-body {
   padding: 28px 0 80px;
@@ -2374,7 +2453,7 @@ html[data-motion="reduced"] .dialog[open] {
   background: var(--white);
 }
 .notif li.unread {
-  background: #f2fbd1;
+  background: var(--lime-tint);
   box-shadow: inset 3px 0 0 var(--lime-deep);
 }
 .notif ul {
@@ -2398,7 +2477,7 @@ html[data-motion="reduced"] .dialog[open] {
 }
 .clip-card .thumb {
   aspect-ratio: 16 / 9;
-  background: var(--charcoal);
+  background: var(--night);
   position: relative;
 }
 .clip-card .thumb svg {
@@ -2412,7 +2491,7 @@ html[data-motion="reduced"] .dialog[open] {
   place-items: center;
   text-align: center;
   padding: 12px;
-  color: var(--white);
+  color: var(--day);
   background: rgba(16, 23, 19, 0.72);
   font-size: 0.85rem;
 }
@@ -2497,13 +2576,13 @@ html[data-motion="reduced"] .dialog[open] {
   color: var(--white);
 }
 .admin-cal .ev.held {
-  background: #fff;
+  background: var(--paper);
   border: 1.5px dashed var(--charcoal);
   color: var(--charcoal);
 }
 .admin-cal .ev.mine {
   background: var(--lime);
-  color: var(--charcoal);
+  color: var(--night);
 }
 .admin-cal .ev.maint {
   background: repeating-linear-gradient(-45deg, #ffe1d6 0 6px, #ffd0bf 6px 12px);
@@ -2742,8 +2821,8 @@ html[data-motion="reduced"] .dialog[open] {
   place-items: center;
   background:
     radial-gradient(60% 50% at 50% 45%, rgba(215, 255, 63, 0.08), transparent 70%),
-    var(--charcoal);
-  color: var(--white);
+    var(--night);
+  color: var(--day);
   transition: opacity 0.6s ease, visibility 0.6s;
 }
 .loading-screen.is-leaving {
@@ -2806,7 +2885,7 @@ html[data-motion="reduced"] .dialog[open] {
   pointer-events: auto;
 }
 .loading-skip:hover {
-  color: var(--white);
+  color: var(--day);
 }
 @media (prefers-reduced-motion: reduce) {
   .loading-screen,
@@ -2824,7 +2903,7 @@ html[data-motion="reduced"] .dialog[open] {
   padding: calc(var(--nav-h) + 24px) var(--gutter) 48px;
   background:
     radial-gradient(60% 50% at 50% 30%, rgba(215, 255, 63, 0.08), transparent 70%),
-    var(--charcoal);
+    var(--night);
 }
 .auth-card {
   width: min(460px, 100%);
@@ -2869,7 +2948,7 @@ html[data-motion="reduced"] .dialog[open] {
 }
 .auth-card .input:focus {
   border-color: var(--charcoal);
-  box-shadow: 0 0 0 3px rgba(16, 23, 19, 0.15);
+  box-shadow: 0 0 0 3px var(--shade-ring);
 }
 
 /* ---------------- portal (account / venue / admin) ---------------- */
@@ -3103,7 +3182,7 @@ a[role="tab"] {
   position: relative;
   height: 40px;
   border-radius: 8px;
-  background: repeating-linear-gradient(90deg, rgba(16, 23, 19, 0.04) 0 1px, transparent 1px 60px), #eef1ea;
+  background: repeating-linear-gradient(90deg, var(--shade-faint) 0 1px, transparent 1px 60px), var(--tint);
 }
 .day-blk {
   position: absolute;
@@ -3209,7 +3288,7 @@ a[role="tab"] {
 .op-court.is-playing {
   border-style: solid;
   border-color: var(--charcoal);
-  background: #f7ffd9;
+  background: var(--lime-tint);
 }
 .op-court h3 {
   font-size: 1.2rem;
@@ -3244,7 +3323,7 @@ a[role="tab"] {
   width: 28px;
   height: 28px;
   border-radius: 50%;
-  background: var(--charcoal);
+  background: var(--night);
   color: var(--lime);
   display: grid;
   place-items: center;
@@ -3276,8 +3355,8 @@ a[role="tab"] {
 /* TV board */
 .board {
   min-height: 100vh;
-  background: var(--charcoal);
-  color: var(--white);
+  background: var(--night);
+  color: var(--day);
   padding: clamp(16px, 3vw, 40px);
   display: grid;
   gap: clamp(16px, 2.5vw, 32px);
@@ -3386,7 +3465,7 @@ a[role="tab"] {
 }
 .board-next li.soon {
   background: var(--lime);
-  color: var(--charcoal);
+  color: var(--night);
 }
 .board-next li span {
   font-family: var(--font-display);
@@ -3409,7 +3488,7 @@ a[role="tab"] {
   max-width: 86%;
   padding: 10px 12px;
   border-radius: 12px;
-  background: #eef1ea;
+  background: var(--tint);
   justify-self: start;
 }
 .msg.mine {
@@ -3436,4 +3515,66 @@ a[role="tab"] {
 .news-item p {
   margin: 0;
   white-space: pre-line;
+}
+
+
+/* Anything on a lime, orange or pastel fill keeps dark text in both themes. */
+.chip[aria-pressed="true"],
+.chip[aria-checked="true"],
+.chip.is-selected,
+.choice[aria-checked="true"],
+.choice[aria-checked="true"] .m,
+.stepper span.done,
+.slot-btn:hover,
+.slot-btn:focus-visible,
+.op-me-playing,
+.msg.mine,
+.legend.confirmed,
+.legend.held,
+.legend.noshow,
+.day-blk,
+.admin-cal .ev.maint,
+.sim-banner {
+  color: var(--night);
+}
+.chip.is-selected,
+.chip[aria-pressed="true"],
+.chip[aria-checked="true"],
+.choice[aria-checked="true"],
+.plan li::before {
+  border-color: var(--night);
+}
+.plan li::before {
+  box-shadow: inset 0 0 0 1.5px var(--night);
+}
+
+/* ---------------- theme toggle ---------------- */
+.theme-toggle {
+  display: inline-grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  border: 1px solid rgba(245, 247, 240, 0.2);
+  background: transparent;
+  color: var(--day);
+  cursor: pointer;
+  transition: background 0.2s var(--ease), border-color 0.2s var(--ease);
+}
+.theme-toggle:hover {
+  background: rgba(245, 247, 240, 0.08);
+  border-color: rgba(245, 247, 240, 0.4);
+}
+.theme-toggle svg {
+  width: 18px;
+  height: 18px;
+}
+.theme-toggle .ico-sun {
+  display: none;
+}
+:root[data-theme="dark"] .theme-toggle .ico-sun {
+  display: block;
+}
+:root[data-theme="dark"] .theme-toggle .ico-moon {
+  display: none;
 }

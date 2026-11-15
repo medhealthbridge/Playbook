@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 // Orchestrates the cinematic experience: one fixed WebGL canvas, a master
 // scroll timeline (GSAP ScrollTrigger, native scrolling), HTML overlay
 // panels, the scoreboard HUD, and the final convergence CTA. Falls back to a
@@ -54,7 +55,7 @@ export function Cinematic({ children }: { children: ReactNode }) {
   const boardRef = useRef<HTMLDivElement>(null);
   // Which 3D sections are on screen; the render loop also pauses while the booking dialog is open.
   const vis = useRef({ journey: false, final: false, dialog: false });
-  const { isOpen: dialogOpen } = useBooking();
+  const dialogOpen = false;
   const syncRender = useCallback(() => {
     const onScreen = vis.current.journey || vis.current.final;
     scrollState.setVisible(onScreen && !vis.current.dialog);
@@ -149,7 +150,7 @@ export function Cinematic({ children }: { children: ReactNode }) {
     ];
     applyPanels(scrollState.target);
     ScrollTrigger.refresh();
-    // Sections below the journey grow once demo data loads; re-measure trigger
+    // Sections below the journey grow once venue data loads; re-measure trigger
     // positions whenever the page height changes so the finale always fires.
     let raf = 0;
     let lastH = document.documentElement.scrollHeight;
@@ -260,7 +261,7 @@ function HeroPanel() {
             <a className="btn btn-ghost" href="#how">{COPY.hero.secondary}</a>
           </div>
           <div className="show-sm" style={{ marginTop: 18 }}>
-            <HeroSearch compact />
+            <HeroSearch />
             <a className="hero-venue-link" href="#how">{COPY.hero.secondary} ↓</a>
           </div>
           <a className="hero-venue-link hide-sm" href="#venues">{COPY.hero.venue} →</a>
@@ -365,7 +366,7 @@ function FinalCTA({ finalRef, staticMode }: { finalRef?: React.RefObject<HTMLEle
           <h2 id="final-title">{COPY.final.heading}</h2>
           <div className="ctas">
             <button type="button" className="btn" onClick={() => open()}>{COPY.final.primary}</button>
-            <a className="btn btn-ghost" href="/demo?role=venue">{COPY.final.secondary}</a>
+            <Link className="btn btn-ghost" href="/venue/new">{COPY.final.secondary}</Link>
           </div>
           <p className="hint" style={{ marginTop: 18 }}>{COPY.brandLine}</p>
         </div>

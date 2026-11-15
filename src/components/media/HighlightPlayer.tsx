@@ -1,5 +1,5 @@
 "use client";
-// Highlight players. `ClipPlayer` plays a demo video clip (AI-generated,
+// Highlight players. `ClipPlayer` plays a sample video clip (AI-generated,
 // captioned as such) and falls back to `HighlightPlayer`, a procedural
 // top-down animation, when there is no video or it fails to load.
 // Both play only when the user presses play: no sound, no autoplay.
@@ -116,7 +116,7 @@ function draw(ctx: CanvasRenderingContext2D, w: number, h: number, kind: ClipKin
   ctx.fillRect(pad + 8, pad + 8, w * 0.32, h * 0.1);
   ctx.fillStyle = "#D7FF3F";
   ctx.font = `700 ${Math.round(h * 0.05)}px sans-serif`;
-  ctx.fillText(`DEMO · ${s.label.toUpperCase()}`, pad + 16, pad + 8 + h * 0.068);
+  ctx.fillText(`SAMPLE · ${s.label.toUpperCase()}`, pad + 16, pad + 8 + h * 0.068);
 }
 
 export function HighlightPlayer({ kind, title, length }: { kind: ClipKind; title: string; length: number }) {
@@ -178,7 +178,7 @@ export function HighlightPlayer({ kind, title, length }: { kind: ClipKind; title
 
   return (
     <figure className="player-frame" style={{ margin: 0 }}>
-      <canvas ref={canvas} aria-label={`Demo animation for clip: ${title}`} role="img" />
+      <canvas ref={canvas} aria-label={`Sample animation for clip: ${title}`} role="img" />
       <div className="player-bar">
         <button className="play-btn" type="button" onClick={toggle} aria-label={playing ? `Pause ${title}` : `Play ${title}`}>
           {playing ? (
@@ -195,7 +195,7 @@ export function HighlightPlayer({ kind, title, length }: { kind: ClipKind; title
         </div>
         <span className="t num">{fmt(secs)} / {fmt(length)}</span>
       </div>
-      <figcaption className="caption-note">Demo animation — not real footage. No sound.</figcaption>
+      <figcaption className="caption-note">Sample animation — not real footage. No sound.</figcaption>
     </figure>
   );
 }
@@ -313,11 +313,11 @@ function VideoClip({ clip, onFail }: { clip: Highlight; onFail: () => void }) {
           muted
           playsInline
           disablePictureInPicture
-          aria-label={`Demo clip: ${clip.title}`}
+          aria-label={`Sample clip: ${clip.title}`}
           onClick={toggle}
           onError={onFail}
         />
-        <span className="player-chip" aria-hidden="true">Demo clip</span>
+        <span className="player-chip" aria-hidden="true">Sample clip</span>
         {!playing && (
           <button type="button" className="player-big-play" onClick={toggle} tabIndex={-1} aria-hidden="true">
             <svg width="28" height="28" viewBox="0 0 16 16"><path d="M4 2l10 6-10 6z" fill="currentColor" /></svg>
@@ -349,7 +349,7 @@ function VideoClip({ clip, onFail }: { clip: Highlight; onFail: () => void }) {
         </div>
         <span className="t num">{clipTime(t)} / {clipTime(dur)}</span>
       </div>
-      <figcaption className="caption-note">Demo clip — AI-generated video, not real footage. No sound.</figcaption>
+      <figcaption className="caption-note">Sample clip — AI-generated video, not real footage. No sound.</figcaption>
     </figure>
   );
 }

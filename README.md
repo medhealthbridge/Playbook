@@ -1,7 +1,7 @@
 # PLAYBOOK — Book. Play. Replay.
 
-A cinematic sports-booking landing page with a working demo booking flow,
-a player area and a venue admin. Initial market: Metro Manila (PHP, Asia/Manila).
+A sports-booking platform with a cinematic landing page: players book courts and join open play,
+venues run their calendar and open play, and the platform admin tracks the cut each venue owes. Initial market: Metro Manila (PHP, Asia/Manila).
 
 - **Prompt (v2, enhanced):** [`docs/MASTER_PROMPT.md`](docs/MASTER_PROMPT.md)
 - **Stack:** Next.js 15 · React 19 · TypeScript · React Three Fiber / Three.js · GSAP ScrollTrigger · plain CSS tokens
@@ -106,9 +106,9 @@ never blocks booking.
 | Rentals | Per-venue items (paddle, ball) added to court bookings and open play; no platform cut |
 | Money | Players pay venues (cash or the venue's PayMongo). Playbook's cut is admin-set (fixed or percent, separately for open play and courts), counted at check-in or confirmation, billed on weekly statements; overdue venues pause automatically (days and on/off are admin settings). Payment bell beeps on venue screens when an online payment lands |
 | Messages | Booking chat, venue news, follows (emails once Resend is configured) |
-| Not built | Venue photos, account deletion / data export, staff invite emails, ownership transfer, recordings/highlights for real venues (homepage clips are labelled demo) |
+| Not built | Venue photos, account deletion / data export, staff invite emails, ownership transfer, recordings and highlights (the homepage clips are AI-generated samples, labelled "Sample clip" and "coming soon") |
 
-The `/demo` routes and homepage previews still use the local demo store and are labelled as demo data.
+The homepage shows only live venues from the database (`/api/venues/public`). Feature tiles and the 3D story cards are illustrations and say so.
 
 ## Where to change things
 
@@ -117,10 +117,10 @@ The `/demo` routes and homepage previews still use the local demo store and are 
 | Headlines, CTAs, section copy | `src/content/copy.ts` |
 | FAQ | `src/content/faq.ts` |
 | Sports (names, taglines, order, featured) | `src/content/sports.ts` · artwork in `src/components/art/SportArt.tsx` |
-| Venues, courts/tables, prices, hours, buffers, deposits, equipment, sessions, maintenance seeds | `src/content/venues.ts` |
-| Plan names, benefits, prices (`price: "₱… / month"`), entitlements | `src/content/plans.ts` |
+| Venues, courts, prices, hours, rentals | Each venue's own dashboard (stored in the database) |
+| Playbook's cut, days to pay, auto-pause | `/admin → Settings` (stored in `platform_setting`) |
 | Colours, type, radii | CSS variables at the top of `src/app/globals.css` (`--lime`, `--charcoal`, …) |
-| Booking/payment/video rules | `src/lib/booking/rules.ts` (covered by `npm test`) |
+| Booking, cut, statement-week and rating rules | `src/lib/booking/engine.ts`, `src/lib/openplay/` (covered by `npm test`) |
 | Camera path, chapter timing | `src/components/three/World.tsx` (`keyframes`) and `src/components/three/timeline.ts` (`PANELS`, `CHAPTERS`) |
 | 3D scenes | `src/components/three/World.tsx` (`Courtside`, `BookWorld`, `PlayWorld`, `ReplayWorld`, `Convergence`) |
 | Real photos/video | replace `SportArt` usages with `<img>`/`<video>`; keep generated concept art distinct from real venue photography |
@@ -154,14 +154,11 @@ every other frame, and the render loop pauses off-screen and while the booking d
 
 ```
 docs/MASTER_PROMPT.md            enhanced prompt (v2)
-src/app/                         layout, landing page, /demo
+src/app/                         layout, landing page, accounts, venue dashboard, admin, booking, open play
 src/content/                     all editable copy & commercial data
 src/lib/booking/                 types, time (Asia/Manila), pure rules
-src/lib/demo/                    demo store (pure actions) + React provider
-src/lib/adapters/interfaces.ts   production service boundaries
 src/components/three/            canvas, world, scroll timeline, textures
 src/components/landing/          cinematic orchestration, sections, hero search
 src/components/booking/          booking dialog
-src/components/demo/             player + venue admin
-tests/booking.test.ts            rule checks (node --experimental-strip-types)
+tests/engine.test.ts             rule checks (node --experimental-strip-types)
 ```

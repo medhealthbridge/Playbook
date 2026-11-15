@@ -13,24 +13,22 @@ export function Footer() {
           <div>
             <Wordmark height={28} />
             <p style={{ marginTop: 12, maxWidth: "34ch" }}>{COPY.brandLine} Courts, tables and pitches across Metro Manila.</p>
-            <p style={{ marginTop: 12 }} className="badge badge-demo on-dark">
-              Demo build
-            </p>
           </div>
           <div>
             <h4>Players</h4>
             <ul>
               <li><Link href="/#sports">Sports</Link></li>
               <li><Link href="/#highlights">Highlights</Link></li>
-              <li><Link href="/#plans">Plans</Link></li>
-              <li><Link href="/demo?role=player">My bookings (demo)</Link></li>
+              <li><Link href="/#plans">Pricing</Link></li>
+              <li><Link href="/account">My bookings</Link></li>
             </ul>
           </div>
           <div>
             <h4>Venues</h4>
             <ul>
               <li><Link href="/#venues">Venue tools</Link></li>
-              <li><Link href="/demo?role=venue">Venue admin (demo)</Link></li>
+              <li><Link href="/venue/new">List your venue</Link></li>
+              <li><Link href="/venue">Venue dashboard</Link></li>
             </ul>
           </div>
           <div>
@@ -38,13 +36,13 @@ export function Footer() {
             <ul>
               <li><Link href="/#faq">FAQ</Link></li>
               <li><Link href="/#faq">Cancellations</Link></li>
-              <li><Link href="/#faq">Recordings &amp; privacy</Link></li>
+              <li><Link href="/terms">Terms</Link></li>
+              <li><Link href="/privacy">Privacy</Link></li>
             </ul>
           </div>
         </div>
         <div className="legal">
           <span>© {new Date().getFullYear()} Playbook. All times in Asia/Manila. Prices in PHP.</span>
-          <span>{COPY.demoNote}</span>
         </div>
       </div>
     </footer>

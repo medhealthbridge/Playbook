@@ -189,7 +189,7 @@ export function highlightTexture(kind: "basketball" | "rally" | "billiards" | "f
     ctx.fillStyle = "#D7FF3F";
     ctx.font = `700 18px ${fonts().body}`;
     ctx.textAlign = "right";
-    ctx.fillText("DEMO CLIP", w - 52, h - 52);
+    ctx.fillText("SAMPLE CLIP", w - 52, h - 52);
     ctx.textAlign = "left";
   });
 }

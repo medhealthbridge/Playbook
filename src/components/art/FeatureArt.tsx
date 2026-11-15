@@ -1,5 +1,5 @@
 // Product-specific illustrations for the feature cards. All figures shown
-// are the same sample data used across the demo (Kalye Court Hub, Court A).
+// are the same sample data used across the illustrations (Kalye Court Hub, Court A).
 import type { ReactNode } from "react";
 
 const C = { lime: "#D7FF3F", white: "#F5F7F0", mute: "#B7C2BA", dim: "#2E3A33", panel: "#18211C", orange: "#FF7648", bg: "#101713" };
@@ -21,7 +21,7 @@ export function CalendarArt() {
     <Svg label="Resource calendar for Court A with 6 PM to 8 PM selected">
       <rect x="20" y="20" width="280" height="160" rx="10" fill={C.panel} />
       <text x="34" y="44" fill={C.white} style={{ ...display, fontSize: 15 }}>COURT A · SAT</text>
-      <text x="286" y="44" fill={C.mute} textAnchor="end" style={font}>Demo data</text>
+      <text x="286" y="44" fill={C.mute} textAnchor="end" style={font}>Example</text>
       {hours.map((h, i) => (
         <g key={h}>
           <text x="34" y={74 + i * 18} fill={C.mute} style={font}>{h}</text>
@@ -90,7 +90,7 @@ export function InviteArt() {
 }
 
 export function LibraryArt() {
-  // Real frames from the demo clips (public/assets/video/*-poster.jpg).
+  // Real frames from the sample clips (public/assets/video/*-poster.jpg).
   const side: [string, string, string][] = [
     ["basketball", "Block at the rim", "0:05"],
     ["billiards", "Corner cut shot", "0:03"],
@@ -113,8 +113,8 @@ export function LibraryArt() {
       <rect x="20" y="20" width="176" height="104" rx="8" fill={C.panel} />
       <image href={poster("pickleball")} x="20" y="20" width="176" height="104" preserveAspectRatio="xMidYMid slice" clipPath="url(#lib-main)" />
       <rect x="20" y="20" width="176" height="104" rx="8" fill="none" stroke={C.lime} strokeWidth="1.5" />
-      <rect x="28" y="28" width="54" height="13" rx="6.5" fill={C.bg} fillOpacity="0.75" />
-      <text x="55" y="37.5" fill={C.lime} textAnchor="middle" style={{ ...font, fontSize: 7, fontWeight: 700, letterSpacing: 0.6 }}>DEMO CLIP</text>
+      <rect x="28" y="28" width="62" height="13" rx="6.5" fill={C.bg} fillOpacity="0.75" />
+      <text x="59" y="37.5" fill={C.lime} textAnchor="middle" style={{ ...font, fontSize: 7, fontWeight: 700, letterSpacing: 0.6 }}>SAMPLE CLIP</text>
       <circle cx="108" cy="72" r="15" fill={C.bg} fillOpacity="0.55" stroke={C.white} strokeOpacity="0.8" />
       <path d="M103 64 L116 72 L103 80 Z" fill={C.white} />
       <rect x="160" y="106" width="28" height="12" rx="3" fill={C.bg} fillOpacity="0.75" />
@@ -126,7 +126,7 @@ export function LibraryArt() {
       <rect x="120" y="134" width="14" height="6" rx="3" fill={C.lime} />
       <rect x="89" y="131" width="2.5" height="12" rx="1" fill={C.orange} />
       <text x="20" y="160" fill={C.white} style={{ ...font, fontWeight: 700 }}>Doubles rally at the net</text>
-      <text x="20" y="176" fill={C.mute} style={font}>0:03 · Pickleball Court 1 · Demo clip</text>
+      <text x="20" y="176" fill={C.mute} style={font}>0:03 · Pickleball Court 1 · Sample clip</text>
       {/* library */}
       {side.map(([n, title, len], i) => {
         const y = 20 + i * 56;

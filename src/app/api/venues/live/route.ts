@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { q1 } from "@/lib/server/db";
 
 // How many venues are live, so the marketing pages know whether to send
-// "Book a slot" to real venues or to the interactive demo. Cached briefly.
+// "Book a slot" to real venues . Cached briefly.
 export const dynamic = "force-dynamic";
 const cache = { "Cache-Control": "public, s-maxage=60, stale-while-revalidate=300" };
 

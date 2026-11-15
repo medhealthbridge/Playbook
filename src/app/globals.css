@@ -334,7 +334,7 @@ p {
   background: var(--orange) !important;
   color: var(--night) !important;
 }
-.badge-demo {
+.badge-note {
   background: transparent !important;
   border: 1px dashed currentColor;
   color: inherit !important;
@@ -1077,14 +1077,14 @@ html[data-motion="reduced"] .scroll-cue span.bar {
 .dark .section-head p {
   color: var(--muted-dark);
 }
-.demo-note {
+.side-note {
   display: inline-flex;
   align-items: center;
   gap: 8px;
   font-size: 0.82rem;
   color: var(--muted);
 }
-.dark .demo-note {
+.dark .side-note {
   color: var(--muted-dark);
 }
 
@@ -2307,7 +2307,7 @@ html[data-motion="reduced"] .dialog[open] {
   }
 }
 
-/* ---------------- demo app (player / venue) ---------------- */
+/* ---------------- app shell (player / venue screens) ---------------- */
 .app-shell {
   min-height: 100vh;
   background: var(--white);
@@ -3618,4 +3618,9 @@ a[role="tab"] {
   flex: none;
   width: 18px;
   height: 18px;
+}
+
+a.sport-card,
+a.sport-card:hover {
+  text-decoration: none;
 }

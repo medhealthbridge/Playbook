@@ -3,7 +3,7 @@
 // broadcast-style overlays, slow "playing video" motion (pan/zoom), live
 // progress bars, soft light halos, a film-strip clip timeline, and cheap
 // mirrored reflections for devices without the real-time mirror floor.
-// Every clip is labelled DEMO CLIP: these are illustrative, not real footage.
+// Every clip is labelled SAMPLE CLIP: these are illustrative, not real footage.
 import { useFrame, useLoader } from "@react-three/fiber";
 import { useMemo, useRef } from "react";
 import * as THREE from "three";
@@ -19,12 +19,12 @@ export interface Clip {
   length: string;
   /** vertical crop centre in the square photo, 0 = bottom, 1 = top */
   focusY: number;
-  /** demo video for this screen (plays on the featured screen while in view) */
+  /** sample video for this screen (plays on the featured screen while in view) */
   video?: string;
 }
 
 // Pickleball leads (featured screen). The first four titles match the real
-// demo clips in src/content/highlights.ts; the rest are placeholder titles.
+// sample clips in src/content/highlights.ts; the rest are placeholder titles.
 export const GALLERY_CLIPS: Clip[] = [
   { sport: "pickleball", title: "Doubles rally at the net", length: "0:03", focusY: 0.34, video: "/assets/video/highlight-pickleball.mp4" },
   { sport: "basketball", title: "Block at the rim", length: "0:05", focusY: 0.55 },
@@ -115,7 +115,7 @@ function overlayTexture(c: Clip, live = false) {
     ctx.textAlign = "right";
     ctx.fillStyle = "#D7FF3F";
     ctx.font = `700 22px ${fonts().body}`;
-    ctx.fillText("DEMO CLIP", w - 36, h - 38);
+    ctx.fillText("SAMPLE CLIP", w - 36, h - 38);
     ctx.textAlign = "left";
     // progress track (fill is animated geometry)
     ctx.fillStyle = "rgba(245,247,240,0.22)";

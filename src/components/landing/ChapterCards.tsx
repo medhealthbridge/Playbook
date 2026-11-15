@@ -1,5 +1,5 @@
 // HTML info cards that accompany each chapter (readable, accessible copy —
-// the 3D world shows the same story spatially). All values are demo data.
+// the 3D world shows the same story spatially). Values are examples.
 import { formatPHP } from "@/lib/booking/time";
 
 export function BookCard() {
@@ -10,7 +10,7 @@ export function BookCard() {
     <div className="info-card glass">
       <div className="row">
         <span className="badge on-dark">Kalye Court Hub · QC</span>
-        <span className="badge badge-demo">Demo data</span>
+        <span className="badge badge-note">Example</span>
       </div>
       <div>
         <div className="title">Court A · Main hardwood</div>
@@ -39,7 +39,7 @@ export function PlayCard() {
     <div className="info-card glass">
       <div className="row">
         <span className="badge badge-lime">Confirmed</span>
-        <span className="badge badge-demo">Demo data</span>
+        <span className="badge badge-note">Example</span>
       </div>
       <div>
         <div className="title num">PB-7KQ2</div>
@@ -67,7 +67,7 @@ export function ReplayCard() {
     <div className="info-card glass">
       <div className="row">
         <span className="badge badge-orange">Clip ready</span>
-        <span className="badge badge-demo">Demo data</span>
+        <span className="badge badge-note">Example</span>
       </div>
       <div>
         <div className="title">Block at the rim</div>

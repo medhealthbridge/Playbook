@@ -1,10 +1,10 @@
 import type { ClipKind, SportId } from "../lib/booking/types.ts";
 
 /**
- * Demo highlight clips shown in the Highlights section (and the featured
+ * Sample highlight clips shown in the Highlights section (and the featured
  * REPLAY gallery screen). The videos are AI-generated (Higgsfield, Kling 3.0;
  * prompts in docs/HIGGSFIELD_VIDEO_PROMPTS.md) and are always captioned as
- * demo clips, never presented as real venue footage.
+ * sample clips, never presented as real venue footage.
  * Titles describe what actually happens in each clip.
  * Order = display order: pickleball leads (launch priority for target venues).
  */

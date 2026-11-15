@@ -394,7 +394,7 @@ const drawVenue = (ctx: CanvasRenderingContext2D) => {
   txt(ctx, "MAIN HARDWOOD", 50, 250, 44, "#D7FF3F", 800, true);
   const rows = ["Indoor · Hardwood · Up to 20 players", "Basketball + volleyball — one shared schedule", "Camera coverage: yes"];
   rows.forEach((r, i) => txt(ctx, r, 50, 340 + i * 56, 32, "#F5F7F0", 500));
-  txt(ctx, "DEMO DATA", 50, 560, 24, "#B7C2BA", 700);
+  txt(ctx, "EXAMPLE", 50, 560, 24, "#B7C2BA", 700);
 };
 const drawTimes = (ctx: CanvasRenderingContext2D) => {
   txt(ctx, "SAT · PICK YOUR TIME", 50, 90, 56, "#F5F7F0", 800, true);
@@ -404,7 +404,7 @@ const drawTimes = (ctx: CanvasRenderingContext2D) => {
   labels.forEach((l, i) => chip(ctx, 50 + (i % 4) * 215, 190 + Math.floor(i / 4) * 110, 190, 84, l, states[i]));
   txt(ctx, "6:00 – 8:00 PM selected", 50, 470, 34, "#D7FF3F", 700);
   txt(ctx, "₱2,500 total · ₱1,250 deposit", 50, 520, 30, "#F5F7F0", 500);
-  txt(ctx, "DEMO DATA", 50, 610, 24, "#B7C2BA", 700);
+  txt(ctx, "EXAMPLE", 50, 610, 24, "#B7C2BA", 700);
 };
 const drawSports = (ctx: CanvasRenderingContext2D) => {
   txt(ctx, "PICK YOUR SPORT", 40, 70, 44, "#F5F7F0", 800, true);
@@ -719,7 +719,7 @@ function ReplayWorld({ mobile, timeRef }: { mobile: boolean; timeRef: React.Muta
   const screenMat = useRef<THREE.MeshBasicMaterial>(null);
   // The giant screen plays the ambient arena loop while it's in view.
   const video = useArenaVideo(() => timeRef.current > 0.55 && timeRef.current < 0.74);
-  // The featured gallery screen (pickleball) plays its real demo clip while the gallery is in view.
+  // The featured gallery screen (pickleball) plays its sample clip while the gallery is in view.
   const lead = GALLERY_CLIPS[0];
   const leadVideo = useLoopVideo(lead.video ?? "", `/assets/video/highlight-${lead.sport}-poster.jpg`, () => !!lead.video && timeRef.current > 0.62 && timeRef.current < 0.9);
   useFrame(() => {

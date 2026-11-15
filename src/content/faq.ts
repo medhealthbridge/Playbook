@@ -12,7 +12,7 @@ export const FAQ: { q: string; a: string; topic: string }[] = [
   {
     topic: "Payments",
     q: "What do I pay online?",
-    a: "Either the full amount or a deposit, depending on the venue. Any remaining balance is shown before you check out and is paid at the venue. Court rental, equipment and memberships are separate charges.",
+    a: "Either the full amount or a deposit, depending on the venue. Any remaining balance is shown before you confirm and is paid at the venue. Some venues also let you confirm now and pay everything at the front desk.",
   },
   {
     topic: "Payments",
@@ -22,31 +22,31 @@ export const FAQ: { q: string; a: string; topic: string }[] = [
   {
     topic: "Cancellations",
     q: "Can I cancel?",
-    a: "Each venue sets its policy, shown before checkout. In the sample policy, cancelling more than 24 hours before start refunds the online payment; within 24 hours it's non-refundable. Outdoor bookings stopped by severe weather follow the venue's weather rules.",
+    a: "Each venue sets its own policy, shown on your booking before you confirm. Cancel before the venue's free-cancellation window and what you paid online is refunded in full; after it, the payment is not refunded.",
   },
   {
     topic: "Equipment",
     q: "Can I rent equipment?",
-    a: "Venues can offer balls, rackets, paddles, cues and more as add-ons. They're listed with prices during booking.",
+    a: "Venues can offer balls, paddles, rackets and more. You add them with their prices when you book a court or join open play.",
   },
   {
-    topic: "Memberships",
-    q: "Do I need a membership to book?",
-    a: "No. A player membership adds benefits like highlight access. It never replaces court or table rental, which is always charged separately.",
+    topic: "Open play",
+    q: "How does open play work?",
+    a: "Scan the venue's QR code or open its link, join the session and check in at the front desk. No payment, no play: you enter the queue once your fee is recorded, by cash or online. The system puts four players on each free court, matched by level when possible, and the facilitator enters the final score.",
+  },
+  {
+    topic: "Open play",
+    q: "How is my level decided?",
+    a: "You choose beginner, intermediate or expert for each sport when you start. After your first scored game, your level follows your results: wins against stronger players move you up faster. Venue staff can correct a level that is clearly wrong.",
+  },
+  {
+    topic: "Pricing",
+    q: "Does Playbook cost anything?",
+    a: "Not for players: you pay only the venue's court or open-play fee. Venues list for free and Playbook keeps a small cut per open-play player or court booking.",
   },
   {
     topic: "Recordings",
-    q: "When will I get video of my game?",
-    a: "Only when all of these are true: the venue publishes recordings, a camera covered your court or table, footage was uploaded and published for your booking, you're an authorised participant, and your membership includes highlights. A membership can't create footage that was never recorded.",
-  },
-  {
-    topic: "Recordings",
-    q: "If I invite friends, can they see our recordings?",
-    a: "Not automatically. Invitations don't grant recording access. The booking owner chooses who can view recordings, and footage stays private by default.",
-  },
-  {
-    topic: "Recordings",
-    q: "How long are recordings kept?",
-    a: "Each venue configures a retention period. After it passes, footage is removed and shown as expired in your library.",
+    q: "Can I get video of my game?",
+    a: "Not yet. Game recordings and highlight clips are planned. The clips on this site are AI-generated samples, not real footage.",
   },
 ];

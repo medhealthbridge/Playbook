@@ -105,7 +105,7 @@ export interface Booking {
   date: string;
   startMin: number;
   endMin: number;
-  ownerId: string; // "demo-player" or another customer id
+  ownerId: string; // customer id
   ownerName: string;
   participants: Participant[];
   equipmentIds: string[];

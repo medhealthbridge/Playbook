@@ -1,32 +1,21 @@
 "use client";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { COPY } from "@/content/copy";
 import { FAQ } from "@/content/faq";
 import { HIGHLIGHTS, clipTime } from "@/content/highlights";
-import { PLAYER_PLANS, PRICE_TBA, VENUE_PLANS, venuePlanById } from "@/content/plans";
 import Image from "next/image";
 import { SPORTS, SPORT_PHOTOS, sportById } from "@/content/sports";
-import { EVENTS, VENUES } from "@/content/venues";
-import { isBlocking } from "@/lib/booking/rules";
-import { addDays, formatDate, formatPHP, formatRange, manilaToday, parseHM } from "@/lib/booking/time";
-import type { SportId } from "@/lib/booking/types";
-import { useDemo } from "@/lib/demo/DemoProvider";
-import { registerEvent, setPlayerPlan, setVenuePlan } from "@/lib/demo/state";
-import { useBooking } from "@/lib/ui/BookingLauncher";
-import { useToast } from "@/lib/ui/Toast";
-import { CalendarArt, InviteArt, LedgerArt, LibraryArt, PriceArt, VenueCalArt } from "../art/FeatureArt";
+import { formatPHP } from "@/lib/booking/time";
+import { useLiveVenues } from "@/lib/ui/useLiveVenues";
+import { CalendarArt, LedgerArt, PriceArt, VenueCalArt } from "../art/FeatureArt";
 import { SportArt } from "../art/SportArt";
 import { ClipPlayer } from "../media/HighlightPlayer";
 
 /* ------------------------------------------------------------ sports */
 export function SportsSection() {
-  const [selected, setSelected] = useState<SportId | null>(null);
-  const { open } = useBooking();
-  const { act, state } = useDemo();
-  const toast = useToast();
-
-  const resources = (id: SportId) => VENUES.flatMap((v) => v.resources.filter((r) => r.sports.includes(id)).map((r) => ({ v, r })));
+  const venues = useLiveVenues();
+  const count = (id: string) => (venues ?? []).filter((v) => v.sports.includes(id)).length;
 
   return (
     <section id="sports" className="section light" aria-labelledby="sports-title">
@@ -36,27 +25,13 @@ export function SportsSection() {
             <p className="eyebrow">Sports</p>
             <h2 id="sports-title">{COPY.sports.heading}</h2>
           </div>
-          <div style={{ display: "grid", gap: 10 }}>
-            <p>{COPY.sports.body}</p>
-            <span className="demo-note"><span className="badge badge-demo">Demo</span> Availability reflects sample venues.</span>
-          </div>
+          <p>{COPY.sports.body}</p>
         </div>
         <div className="sports-grid">
           {SPORTS.map((s) => {
-            const n = resources(s.id).length;
-            const ev = EVENTS.filter((e) => e.sportId === s.id).length;
+            const n = count(s.id);
             return (
-              <button
-                key={s.id}
-                type="button"
-                className={`sport-card ${s.featured ? "featured" : ""} ${SPORT_PHOTOS[s.id] ? "has-photo" : ""}`}
-                aria-expanded={selected === s.id}
-                aria-controls="sport-panel"
-                onClick={() => {
-                  setSelected(s.id);
-                  requestAnimationFrame(() => document.getElementById("sport-panel")?.scrollIntoView({ block: "nearest" }));
-                }}
-              >
+              <Link key={s.id} href={`/venues?sport=${s.id}`} className={`sport-card ${s.featured ? "featured" : ""} ${SPORT_PHOTOS[s.id] ? "has-photo" : ""}`}>
                 <span className="art">
                   {SPORT_PHOTOS[s.id] ? (
                     <Image
@@ -77,93 +52,25 @@ export function SportsSection() {
                 </span>
                 {SPORT_PHOTOS[s.id]?.illustrative && <span className="illustrative" aria-hidden="true">Illustrative</span>}
                 <span className="avail">
-                  {n > 0 ? (
-                    <span className="badge badge-lime">{n} to rent</span>
-                  ) : ev > 0 ? (
-                    <span className="badge badge-orange">Sessions only</span>
+                  {venues === null ? null : n > 0 ? (
+                    <span className="badge badge-lime">{n} {n === 1 ? "venue" : "venues"}</span>
                   ) : (
                     <span className="badge on-dark">Coming soon</span>
                   )}
                 </span>
                 <h3>{s.name}</h3>
                 <p>{s.tagline}</p>
-                <span className="go" aria-hidden="true">See availability →</span>
+                <span className="go" aria-hidden="true">{n > 0 ? "See availability →" : "See venues →"}</span>
                 <span className="sr-only">{s.visual}</span>
-              </button>
+              </Link>
             );
           })}
-          <a href="#venues" className="sport-card sport-cta">
+          <Link href="/venue/new" className="sport-card sport-cta">
             <span className="avail"><span className="badge badge-lime">For venues</span></span>
             <h3>Run courts or tables?</h3>
-            <p>List your venue, manage bookings and payments, and publish game recordings.</p>
-            <span className="go">Explore venue tools →</span>
-          </a>
-        </div>
-
-        <div id="sport-panel" aria-live="polite">
-          {selected && (
-            <div className="sport-panel">
-              <div className="section-head" style={{ marginBottom: 8 }}>
-                <h3>{sportById(selected).name}</h3>
-                {resources(selected).length > 0 && (
-                  <button type="button" className="btn btn-dark btn-sm" onClick={() => open({ sportId: selected })}>
-                    Book {sportById(selected).name.toLowerCase()}
-                  </button>
-                )}
-              </div>
-              <p className="eyebrow" style={{ marginTop: 12 }}>Rent a whole {sportById(selected).resourceNoun}</p>
-              {resources(selected).length ? (
-                <div className="option-list">
-                  {resources(selected).map(({ v, r }) => (
-                    <div key={r.id} className="option">
-                      <div>
-                        <div className="t">{r.name} · {v.name}</div>
-                        <div className="m">
-                          {v.area} · {r.indoor ? "Indoor" : "Outdoor"} · {r.surface} · up to {r.capacity} · <span className="num">{formatPHP(r.hourlyRate)}</span>/hr
-                          {r.sports.length > 1 ? " · shared court" : ""}
-                        </div>
-                      </div>
-                      <button type="button" className="btn btn-xs" onClick={() => open({ sportId: selected, venueId: v.id, resourceId: r.id })}>
-                        Check times
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="empty" style={{ marginTop: 12 }}>
-                  No venues offer {sportById(selected).name.toLowerCase()} rental on Playbook yet. We&apos;re adding venues — check back soon.
-                </div>
-              )}
-              <p className="eyebrow" style={{ marginTop: 24 }}>Join an open session (pay per player)</p>
-              {EVENTS.filter((e) => e.sportId === selected).length ? (
-                <div className="option-list">
-                  {EVENTS.filter((e) => e.sportId === selected).map((e) => {
-                    const joined = state?.eventRegistrations.some((x) => x.eventId === e.id);
-                    return (
-                      <div key={e.id} className="option">
-                        <div>
-                          <div className="t">{e.title} · {VENUES.find((v) => v.id === e.venueId)!.name}</div>
-                          <div className="m">
-                            {formatDate(addDays(manilaToday(), e.dayOffset))} · {formatRange(e.startMin, e.endMin)} · {e.level} · <span className="num">{formatPHP(e.feePerPlayer)}</span>/player · {e.spots} spots
-                          </div>
-                        </div>
-                        <button
-                          type="button"
-                          className="btn btn-xs btn-dark"
-                          disabled={joined}
-                          onClick={() => act((s, t) => registerEvent(s, e.id, t)).then(() => toast("You're on the list (demo). Pay at the venue."))}
-                        >
-                          {joined ? "Joined" : "Join session"}
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <p className="hint" style={{ marginTop: 8 }}>No open sessions scheduled.</p>
-              )}
-            </div>
-          )}
+            <p>List your venue for free, take bookings and run open play with automatic matchmaking.</p>
+            <span className="go">List your venue →</span>
+          </Link>
         </div>
       </div>
     </section>
@@ -172,12 +79,10 @@ export function SportsSection() {
 
 /* ------------------------------------------------------------ features */
 const FEATURES = [
-  { who: "Players", title: "Your time, secured.", body: "Pick a named court and an exact start and end time. Holds prevent double-booking.", Art: CalendarArt },
-  { who: "Players", title: "Know what you're paying.", body: "Rental, equipment, deposit and balance — shown before you pay.", Art: PriceArt },
-  { who: "Players", title: "Bring everyone into the game.", body: "Invite your squad from the booking. Recording access stays your call.", Art: InviteArt },
-  { who: "Players", title: "Your moments, ready to replay.", body: "Clips from participating venues land in your private library.", Art: LibraryArt },
-  { who: "Venues", title: "One view of the whole venue.", body: "Every court, table and pitch — bookings, holds and maintenance together.", Art: VenueCalArt },
-  { who: "Venues", title: "Keep payments in view.", body: "Deposits, balances, pending and failed payments with clear statuses.", Art: LedgerArt },
+  { who: "Players", title: "Your time, secured.", body: "Pick a named court and an exact start and end time. A 10-minute hold keeps it yours while you confirm.", Art: CalendarArt },
+  { who: "Players", title: "Know what you\u2019re paying.", body: "Court, rentals, deposit and balance, shown before you pay. You pay the venue directly.", Art: PriceArt },
+  { who: "Venues", title: "One view of the whole venue.", body: "Every court, table and pitch: bookings, walk-ins and maintenance blocks together.", Art: VenueCalArt },
+  { who: "Venues", title: "Keep payments in view.", body: "Cash and online payments recorded per player, with a beep when an online payment lands.", Art: LedgerArt },
 ];
 
 export function FeaturesSection() {
@@ -189,7 +94,7 @@ export function FeaturesSection() {
             <p className="eyebrow">How it works</p>
             <h2 id="features-title">Less group-chat chaos. More game time.</h2>
           </div>
-          <span className="demo-note"><span className="badge badge-demo">Demo data</span> Previews use the same sample venue.</span>
+          <p>Book a court for your group, or join open play and get matched with players of your level. Screens shown are illustrations.</p>
         </div>
         <div className="feature-grid">
           {FEATURES.map(({ who, title, body, Art }) => (
@@ -210,8 +115,7 @@ export function FeaturesSection() {
 
 /* ------------------------------------------------------------ venues */
 export function VenueDiscovery() {
-  const { open } = useBooking();
-  const { state } = useDemo();
+  const venues = useLiveVenues();
   return (
     <section id="discover" className="section light" aria-labelledby="disc-title">
       <div className="container">
@@ -220,44 +124,39 @@ export function VenueDiscovery() {
             <p className="eyebrow">Venues</p>
             <h2 id="disc-title">{COPY.venuesDiscovery.heading}</h2>
           </div>
-          <div style={{ display: "grid", gap: 10 }}>
-            <p>{COPY.venuesDiscovery.body}</p>
-            <span className="demo-note"><span className="badge badge-demo">Demo data</span> Fictional venues and prices.</span>
+          <p>{COPY.venuesDiscovery.body}</p>
+        </div>
+        {venues === null ? (
+          <p className="hint">Loading venues…</p>
+        ) : venues.length === 0 ? (
+          <div className="venue-card">
+            <h3>Venues are joining Playbook</h3>
+            <p className="loc">The first venues are being set up. Run courts, tables or pitches? Listing is free.</p>
+            <div className="actions"><Link href="/venue/new" className="btn btn-sm btn-dark">List your venue</Link></div>
           </div>
-        </div>
-        <div className="venue-grid">
-          {VENUES.map((v) => {
-            const video = state ? venuePlanById(state.venuePlans[v.id]).entitlements.videoPublishing : false;
-            return (
-              <article key={v.id} className="venue-card">
-                <div>
-                  <h3>{v.name}</h3>
-                  <p className="loc">{v.area} · Open {v.open}–{v.close} · {v.depositPercent ? `${v.depositPercent}% deposit` : "Pay in full"}</p>
-                </div>
-                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                  {v.amenities.slice(0, 4).map((a) => <span key={a} className="badge">{a}</span>)}
-                  {video && <span className="badge badge-lime">Recordings</span>}
-                </div>
-                <ul className="res-list">
-                  {v.resources.slice(0, 4).map((r) => (
-                    <li key={r.id}>
-                      <span className="name">{r.name}</span>
-                      <span className="num">{formatPHP(r.hourlyRate)}/hr</span>
-                      <span className="det">
-                        {r.sports.map((s) => sportById(s).name).join(" · ")} · {r.indoor ? "Indoor" : "Outdoor"} · {r.surface} · up to {r.capacity}
-                        {video && r.recordingCapable ? " · camera" : ""}
-                      </span>
-                    </li>
-                  ))}
-                  {v.resources.length > 4 && <li><span className="det">+{v.resources.length - 4} more</span></li>}
-                </ul>
-                <div className="actions">
-                  <button type="button" className="btn btn-sm btn-dark" onClick={() => open({ venueId: v.id })}>Book here</button>
-                </div>
-              </article>
-            );
-          })}
-        </div>
+        ) : (
+          <>
+            <div className="venue-grid">
+              {venues.slice(0, 6).map((v) => (
+                <article key={v.slug} className="venue-card">
+                  <div>
+                    <h3>{v.name}</h3>
+                    <p className="loc">{v.area} · Open {v.open}–{v.close}</p>
+                  </div>
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    {v.sports.map((id) => <span key={id} className="badge">{SPORTS.find((x) => x.id === id)?.name ?? id}</span>)}
+                    {v.payOnline && <span className="badge badge-lime">Pay online</span>}
+                  </div>
+                  <ul className="res-list">
+                    <li><span className="name">{v.courts} {v.courts === 1 ? "court" : "courts"}</span><span className="num">from {formatPHP(v.fromCents / 100)}/hr</span></li>
+                  </ul>
+                  <div className="actions"><Link href={`/venues/${v.slug}`} className="btn btn-sm btn-dark">See times</Link></div>
+                </article>
+              ))}
+            </div>
+            {venues.length > 6 && <p style={{ marginTop: 16 }}><Link href="/venues" className="btn btn-sm btn-outline">All {venues.length} venues</Link></p>}
+          </>
+        )}
       </div>
     </section>
   );
@@ -267,16 +166,12 @@ export function VenueDiscovery() {
 export function HighlightsSection() {
   const [i, setI] = useState(0);
   const clip = HIGHLIGHTS[i];
-  const states = [
-    ["Ready", "badge-ok"], ["Processing", "badge-warn"], ["Awaiting upload", "badge-warn"], ["Not recorded", "badge-muted"],
-    ["Restricted by plan", "badge-muted"], ["Failed", "badge-bad"], ["Expired", "badge-muted"],
-  ];
   return (
     <section id="highlights" className="section dark" aria-labelledby="hl-title">
       <div className="container">
         <div className="section-head">
           <div>
-            <p className="eyebrow">Highlights</p>
+            <p className="eyebrow">Highlights · coming soon</p>
             <h2 id="hl-title">{COPY.highlights.heading}</h2>
           </div>
           <p>{COPY.highlights.body}</p>
@@ -284,7 +179,7 @@ export function HighlightsSection() {
         <div className="highlights-grid">
           <ClipPlayer clip={clip} />
           <div>
-            <p className="eyebrow" style={{ marginBottom: 10 }}>Your library · demo</p>
+            <p className="eyebrow" style={{ marginBottom: 10 }}>Sample clips</p>
             <div className="library">
               {HIGHLIGHTS.map((c, k) => (
                 <button key={c.id} type="button" className="lib-item" aria-pressed={k === i} onClick={() => setI(k)}>
@@ -298,51 +193,30 @@ export function HighlightsSection() {
                   </span>
                   <span>
                     <span className="t" style={{ display: "block" }}>{c.title}</span>
-                    <span className="m">{sportById(c.sport).name} · {c.meta} · {clipTime(c.seconds)}</span>
+                    <span className="m">{sportById(c.sport).name} · {clipTime(c.seconds)}</span>
                   </span>
                 </button>
               ))}
             </div>
             <div className="alert alert-info" style={{ marginTop: 14 }}>
-              <span>Clips are private by default. Only authorised participants of the booking can view them, and sharing is controlled by the booking owner.</span>
+              <span>Game recordings are not available yet. When they launch, clips will be private by default and shared only with the players in the booking.</span>
             </div>
           </div>
         </div>
-        <ol className="rules" aria-label="When a recording is available">
-          <li><strong>The venue records</strong>Video publishing is on for the venue, and a camera covers your court or table.</li>
-          <li><strong>Footage is published</strong>Staff upload footage for your booking and publish clips.</li>
-          <li><strong>You&apos;re authorised</strong>You&apos;re the booking owner or they granted you access. Invites alone don&apos;t.</li>
-          <li><strong>Your plan includes it</strong>Replay or Replay Plus. Downloads need Replay Plus.</li>
-        </ol>
-        <div className="states" aria-label="Clip states you might see">
-          {states.map(([l, c]) => <span key={l} className={`badge ${c}`}>{l}</span>)}
-        </div>
-        <p className="hint" style={{ marginTop: 14, color: "var(--muted-dark)" }}>A membership can&apos;t create footage that was never recorded. Each state explains why a clip isn&apos;t available.</p>
       </div>
     </section>
   );
 }
 
 /* ------------------------------------------------------------ for venues */
-export function ForVenuesSection() {
-  const { state, now } = useDemo();
-  const today = manilaToday(now);
-  const venue = VENUES[0];
-  const open = parseHM(venue.open);
-  const close = parseHM(venue.close);
-  const span = close - open;
-  const rows = useMemo(() => {
-    if (!state) return [];
-    return [...venue.resources, ...VENUES[2].resources.filter((r) => r.sports.includes("pickleball")).slice(0, 2)].map((r) => ({
-      r,
-      blocks: [
-        ...state.bookings.filter((b) => b.resourceId === r.id && b.date === today && isBlocking(b, now)).map((b) => ({ s: b.startMin, e: b.endMin, k: b.status === "held" ? "held" : "confirmed", mine: b.ownerId === "demo-player" })),
-        ...state.maintenance.filter((m) => m.resourceId === r.id && m.date === today).map((m) => ({ s: m.startMin, e: m.endMin, k: "maint", mine: false })),
-      ],
-    }));
-  }, [state, today, now, venue]);
-  const ledger = useMemo(() => (state ? state.bookings.filter((b) => b.venueId === "kalye" && b.date >= today).slice(0, 5) : []), [state, today]);
+const VENUE_STEPS: [string, string][] = [
+  ["List for free", "Register your venue and courts. No subscription and no setup fee."],
+  ["Take bookings", "Players book online; your front desk adds walk-ins, blocks and weekly regulars on one calendar."],
+  ["Run open play", "Players join by QR code, the system matches them by level, and your facilitator calls games and enters scores."],
+  ["Get paid directly", "Cash or online through your own PayMongo account. Playbook keeps a small cut per player or booking, billed weekly."],
+];
 
+export function ForVenuesSection() {
   return (
     <section id="venues" className="section dark" aria-labelledby="fv-title" style={{ borderTop: "1px solid var(--line-dark)" }}>
       <div className="container">
@@ -351,165 +225,59 @@ export function ForVenuesSection() {
             <p className="eyebrow">For venues</p>
             <h2 id="fv-title">{COPY.forVenues.heading}</h2>
           </div>
-          <div style={{ display: "grid", gap: 14 }}>
+          <div style={{ display: "grid", gap: 12, justifyItems: "start" }}>
             <p>{COPY.forVenues.body}</p>
-            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-              <Link href="/venue/new" className="btn btn-sm">List your venue</Link>
-              <Link href="/demo?role=venue" className="btn btn-sm btn-ghost">{COPY.forVenues.cta}</Link>
-              <a href="#plans" className="btn btn-sm btn-ghost">Venue plans</a>
-            </div>
+            <Link href="/venue/new" className="btn btn-sm">{COPY.forVenues.cta}</Link>
           </div>
         </div>
-        <div className="venue-tools">
-          <div className="tool-card">
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-              <h3>Today&apos;s schedule</h3>
-              <span className="badge on-dark badge-demo">Live demo data</span>
-            </div>
-            <div className="cal-mini" role="img" aria-label="Today's bookings, holds and maintenance across sample resources">
-              {rows.map(({ r, blocks }) => (
-                <div key={r.id} className="cal-row">
-                  <span>{r.name.split(" · ")[0]}</span>
-                  <div className="lane">
-                    {blocks.map((b, i) => (
-                      <span key={i} className={`blk ${b.k} ${b.mine ? "mine" : ""}`} style={{ left: `${(Math.max(0, b.s - open) / span) * 100}%`, width: `${((b.e - b.s) / span) * 100}%` }}>
-                        {b.k === "maint" ? "Maint." : ""}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              ))}
-              {!state && <div className="empty">Loading schedule…</div>}
-            </div>
-            <p className="hint" style={{ color: "var(--muted-dark)" }}>Bookings made in the demo booking flow appear here instantly.</p>
-          </div>
-          <div className="tool-stack">
-            <div className="tool-card">
-              <h3>Payments</h3>
-              <table className="ledger">
-                <thead><tr><th scope="col">Ref</th><th scope="col">Paid</th><th scope="col">Status</th></tr></thead>
-                <tbody>
-                  {ledger.map((b) => (
-                    <tr key={b.id}>
-                      <td>{b.ref}</td>
-                      <td>{formatPHP(b.payment.amountPaid)}</td>
-                      <td>{b.payment.status.replace("_", " ")}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <div className="tool-card">
-              <h3>Publish recordings</h3>
-              <ol className="workflow">
-                <li><span className="n">1</span><span><b>Upload or import</b> exported CCTV or camera files.</span></li>
-                <li><span className="n">2</span><span><b>Link</b> them to a completed booking and court.</span></li>
-                <li><span className="n">3</span><span><b>Cut or supply</b> the clip.</span></li>
-                <li><span className="n">4</span><span><b>Publish</b> to eligible participants only.</span></li>
-              </ol>
-              <p className="hint" style={{ color: "var(--muted-dark)" }}>Live camera connections and automatic highlight detection are planned, not part of this demo.</p>
-            </div>
-          </div>
-        </div>
+        <ol className="rules" aria-label="How Playbook works for venues">
+          {VENUE_STEPS.map(([t, b]) => <li key={t}><strong>{t}</strong>{b}</li>)}
+        </ol>
       </div>
     </section>
   );
 }
 
-/* ------------------------------------------------------------ plans */
+/* ------------------------------------------------------------ pricing */
 export function PlansSection() {
-  const [tab, setTab] = useState<"players" | "venues">("players");
-  const { state, act } = useDemo();
-  const toast = useToast();
-  const plans = tab === "players" ? PLAYER_PLANS : VENUE_PLANS;
   return (
     <section id="plans" className="section light" aria-labelledby="plans-title">
       <div className="container">
         <div className="section-head">
           <div>
-            <p className="eyebrow">Plans</p>
+            <p className="eyebrow">Pricing</p>
             <h2 id="plans-title">{COPY.plans.heading}</h2>
           </div>
           <p>{COPY.plans.body}</p>
         </div>
-        <div className="tabs" role="tablist" aria-label="Plan audience">
-          {(["players", "venues"] as const).map((t) => (
-            <button
-              key={t}
-              role="tab"
-              id={`tab-${t}`}
-              aria-selected={tab === t}
-              aria-controls="plans-panel"
-              tabIndex={tab === t ? 0 : -1}
-              onClick={() => setTab(t)}
-              onKeyDown={(e) => {
-                if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
-                  const next = tab === "players" ? "venues" : "players";
-                  setTab(next);
-                  document.getElementById(`tab-${next}`)?.focus();
-                }
-              }}
-            >
-              For {t}
-            </button>
-          ))}
+        <div className="plan-grid">
+          <article className="plan">
+            <h3>Players</h3>
+            <p>Create an account, book courts and join open play.</p>
+            <p className="price">Free</p>
+            <ul>
+              <li>Pay only the venue&apos;s court or open-play fee</li>
+              <li>Pay by cash at the venue, or online where the venue offers it</li>
+              <li>Your level and win–loss record per sport</li>
+              <li>Messages with the venue about your booking</li>
+            </ul>
+            <Link href="/venues" className="btn btn-sm btn-dark">Find a court</Link>
+          </article>
+          <article className="plan is-current">
+            <h3>Venues</h3>
+            <p>No subscription and no setup fee. Playbook earns only when you do.</p>
+            <p className="price">Free to list</p>
+            <ul>
+              <li>Court calendar, walk-ins and recurring bookings</li>
+              <li>Open play with automatic matchmaking by level</li>
+              <li>Players pay you directly, by cash or online</li>
+              <li>A small cut per open-play player or court booking, billed weekly</li>
+              <li>No cut on your equipment rentals</li>
+            </ul>
+            <Link href="/venue/new" className="btn btn-sm btn-dark">List your venue</Link>
+          </article>
         </div>
-        <div id="plans-panel" role="tabpanel" aria-labelledby={`tab-${tab}`}>
-          {tab === "venues" ? (
-            <div className="plan-grid">
-              <article className="plan is-current">
-                <h3>Free to list</h3>
-                <p>No subscription and no setup fee. Playbook earns only when you do.</p>
-                <p className="price">₱0 / month</p>
-                <ul>
-                  <li>Court calendar, walk-ins and recurring bookings</li>
-                  <li>Open play with automatic matchmaking by level</li>
-                  <li>Players pay you directly, by cash or online</li>
-                  <li>A small cut per open-play player or court booking, billed weekly</li>
-                  <li>No cut on your equipment rentals</li>
-                </ul>
-                <Link href="/venue/new" className="btn btn-sm btn-dark">List your venue</Link>
-              </article>
-            </div>
-          ) : (
-          <div className="plan-grid">
-            {plans.map((p) => {
-              const current = tab === "players" ? state?.playerPlan === p.id : state?.venuePlans.kalye === p.id;
-              return (
-                <article key={p.id} className={`plan ${current ? "is-current" : ""}`}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
-                    <h3>{p.name}</h3>
-                    {current && <span className="badge badge-lime">Demo: current</span>}
-                  </div>
-                  <p>{p.summary}</p>
-                  <p className="price">{p.price ?? PRICE_TBA}</p>
-                  <ul>
-                    {p.benefits.map((b) => <li key={b}>{b}</li>)}
-                  </ul>
-                  <button
-                    type="button"
-                    className={`btn btn-sm ${current ? "btn-ghost" : "btn-dark"}`}
-                    disabled={!state || current}
-                    onClick={() =>
-                      act((s) => (tab === "players" ? setPlayerPlan(s, p.id as never) : setVenuePlan(s, "kalye", p.id as never)), 250).then(() =>
-                        toast(tab === "players" ? `Demo player plan set to ${p.name}. Venue plans unchanged.` : `Demo: Kalye Court Hub is now on ${p.name}. Your player plan is unchanged.`),
-                      )
-                    }
-                  >
-                    {current ? "Selected (demo)" : `Choose ${p.name} (demo)`}
-                  </button>
-                </article>
-              );
-            })}
-          </div>
-          )}
-        </div>
-        <p className="plan-note">
-          {tab === "players"
-            ? "Proposed plan names and benefits. Final prices, limits and allowances will be announced. Court and table rental is always charged separately. Highlights also depend on the venue recording and publishing your game."
-            : "The exact cut is shown in your venue dashboard before you take your first booking."}{" "}
-          {tab === "players" && <span className="badge badge-demo">Demo selection</span>}
-        </p>
+        <p className="plan-note">The exact cut is shown in your venue dashboard before you take your first booking.</p>
       </div>
     </section>
   );

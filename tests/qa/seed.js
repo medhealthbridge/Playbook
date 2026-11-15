@@ -11,7 +11,7 @@ async function makeVenue(page, name, courts) {
   await page.fill('#name', name); await page.selectOption('#area', 'Pasig'); await page.fill('#phone', '0917 123 4567');
   await page.fill('#address', `1 ${name} Street, Pasig City`); await page.fill('#business_name', `${name} Inc.`); await page.fill('#business_reg_no', 'DTI-7654321');
   for (let i = 0; i < courts; i++) { await page.fill(`input[name=court_name_${i}]`, `${name} Court ${i + 1}`); await page.selectOption(`select[name=court_sport_${i}]`, 'pickleball'); await page.fill(`input[name=court_rate_${i}]`, '500'); }
-  await page.check('input[name=agree]'); await go(page, 'button:has-text("Submit for review")');
+  await page.check('input[name=agree]'); await page.check('input[name=agree_privacy]'); await go(page, 'button:has-text("Submit for review")');
   return page.url().split('?')[0].split('/').pop();
 }
 (async () => {
@@ -27,8 +27,9 @@ async function makeVenue(page, name, courts) {
   const ad = await login(b, U.admin[1]);
   for (const name of ['Alpha Pickle', 'Bravo Pickle']) { await ad.page.goto(`${B}/admin?tab=venues&status=pending`); await go(ad.page, `tr:has-text("${name}") >> button:has-text("Approve")`); }
   await A.page.goto(`${B}/venue/${venueA}?tab=staff`);
-  await A.page.fill('input[name=email]', U.managerA[1]); await A.page.selectOption('select[name=role]', 'manager'); await go(A.page, 'form:has(input[name=email]) button[type=submit]');
-  await A.page.fill('input[name=email]', U.staffA[1]); await A.page.selectOption('select[name=role]', 'staff'); await go(A.page, 'form:has(input[name=email]) button[type=submit]');
+  // The UI only adds facilitators now; the manager tier still exists in the permission code, so keep one to test it.
+  await db(`INSERT INTO venue_member (venue_id, user_id, role) SELECT $1, id, 'manager' FROM "user" WHERE email=$2`, [venueA, U.managerA[1]]);
+  await A.page.fill('input[name=email]', U.staffA[1]); await go(A.page, 'form:has(input[name=email]) button[type=submit]');
   // player1 books Alpha tomorrow, first slot, pay at venue
   const p1 = await login(b, U.player1[1]);
   await p1.page.goto(`${B}/venues/alpha-pickle-pasig`); await go(p1.page, '.chip-row.scroll-x a >> nth=1'); await go(p1.page, '.slot-btn >> nth=0'); await go(p1.page, 'button:has-text("pay")');

@@ -94,12 +94,12 @@ const go = async (p, sel) => { await Promise.all([p.waitForNavigation({ timeout:
     const p = S1.staffA.page; await p.goto(`${B}/venue/${A}`);
     const tabs = (await p.locator('[role=tab]').allInnerTexts()).join(',');
     const leaks = [];
-    for (const t of ['settings', 'staff', 'payments', 'billing']) { await p.goto(`${B}/venue/${A}?tab=${t}`); if (await p.locator('#deposit_percent, input[name=email], #pk, .plan-pick').count()) leaks.push(t); }
+    for (const t of ['settings', 'staff', 'payments', 'billing']) { await p.goto(`${B}/venue/${A}?tab=${t}`); if (await p.locator('#deposit_percent, input[name=email], #pk, :text("Owed to Playbook this week")').count()) leaks.push(t); }
     return [!/STAFF|PAYMENTS|BILLING|SETTINGS/i.test(tabs) && leaks.length === 0, `tabs=${tabs} leaks=${leaks.join(',') || 'none'}`];
   });
   await check('T-P5', 'Manager cannot see owner-only payments/billing', async () => {
     const p = S1.managerA.page; const leaks = [];
-    for (const t of ['payments', 'billing']) { await p.goto(`${B}/venue/${A}?tab=${t}`); if (await p.locator('#pk, .plan-pick').count()) leaks.push(t); }
+    for (const t of ['payments', 'billing']) { await p.goto(`${B}/venue/${A}?tab=${t}`); if (await p.locator('#pk, :text("Owed to Playbook this week")').count()) leaks.push(t); }
     return [leaks.length === 0, `leaks=${leaks.join(',') || 'none'}`];
   });
   await check('T-P6', 'Another player cannot open player 1\'s booking page', async () => {
@@ -107,7 +107,7 @@ const go = async (p, sel) => { await Promise.all([p.waitForNavigation({ timeout:
     return [r.status() === 404 && (await p.locator('#messages').count()) === 0, `HTTP ${r.status()}`];
   });
   await check('T-P7', 'Owner B cannot open venue A invoices by ID', async () => {
-    await db(`INSERT INTO invoice (number, venue_id, period_start, period_end, plan, total_cents, due_date) VALUES ('INV-QA-A',$1,'2026-10-01','2026-10-31','trial',1000,'2026-11-08') ON CONFLICT DO NOTHING`, [A]);
+    await db(`INSERT INTO invoice (number, venue_id, period_start, period_end, plan, total_cents, due_date) VALUES ('INV-QA-A',$1,'2026-10-05','2026-10-11','free',1000,'2099-01-01') ON CONFLICT DO NOTHING`, [A]);
     const inv = (await db(`SELECT id FROM invoice WHERE number='INV-QA-A'`))[0].id;
     const p = S1.ownerB.page;
     const r1 = await p.goto(`${B}/venue/${A}/invoice/${inv}`); const u1 = pathOf(p.url());
@@ -138,12 +138,13 @@ const go = async (p, sel) => { await Promise.all([p.waitForNavigation({ timeout:
     const rr = await replay(S1.staffA.page, `${B}/venue/${A}?tab=courts`, fAddA, { court_name_0: 'Hacked Court', court_sport_0: 'pickleball', court_rate_0: '1' }); var ans3 = `${rr.status} ${rr.location}`;
     const n1 = (await db('SELECT count(*)::int n FROM resource WHERE venue_id=$1', [A]))[0].n; return [n1 === n0, `courts ${n0}→${n1}; server: ${ans3}`];
   });
-  await oA.goto(`${B}/venue/${A}?tab=billing`);
-  const fPlan = await captureForm(oA, oA.locator('form:has(input[value=club])'));
-  await check('T-F4', 'Manager replays owner-only "choose plan"', async () => {
-    const before = (await db('SELECT plan FROM venue WHERE id=$1', [A]))[0].plan;
-    var r4 = await replay(S1.managerA.page, `${B}/venue/${A}?tab=billing`, fPlan);
-    const after = (await db('SELECT plan FROM venue WHERE id=$1', [A]))[0].plan; return [after === before, `plan ${before}→${after}; server: ${r4.status} ${r4.location}`];
+  await oA.goto(`${B}/venue/${A}?tab=players`);
+  const fBlock = await captureForm(oA, oA.locator('form:has(input[name=action][value=block])').first());
+  await check('T-F4', 'Manager replays owner-only "block player"', async () => {
+    const n = async () => (await db('SELECT count(*)::int n FROM venue_player_block WHERE venue_id=$1', [A]))[0].n;
+    const before = await n();
+    var r4 = await replay(S1.managerA.page, `${B}/venue/${A}?tab=players`, fBlock, { reason: 'forged block' });
+    const after = await n(); return [after === before, `blocks ${before}→${after}; server: ${r4.status} ${r4.location}`];
   });
   await oA.goto(`${B}/venue/${A}?tab=staff`);
   const fMember = await captureForm(oA, oA.locator('form:has(input[name=email])'));
@@ -232,13 +233,13 @@ const go = async (p, sel) => { await Promise.all([p.waitForNavigation({ timeout:
     await db(`UPDATE venue SET status='active' WHERE id=$1`, [VB]);
     return [listed === 0 && r.status() === 404, `listed ${listed}, venue page HTTP ${r.status()}`];
   });
-  await check('T-W5', 'Platform fee recorded on online booking; none on staff walk-in', async () => {
+  await check('T-W5', 'Cut recorded on an online booking and on a staff walk-in (20% of the court price)', async () => {
     const f = (await db('SELECT platform_fee_cents FROM booking WHERE id=$1', [S.bookingId]))[0];
     const st = S1.staffA.page; const url = `${B}/venue/${A}?tab=calendar&date=${S.tomorrow}`; await st.goto(url);
     const fw = await captureForm(st, st.locator('form:has(#wi-name)'));
     const rr = await replay(st, url, fw, { resource_id: S.courtsA[0].id, start: '21:00', duration: '60', customer_name: 'Walk QA' });
     const w = (await db(`SELECT platform_fee_cents FROM booking WHERE customer_name='Walk QA' AND venue_id=$1`, [A]))[0];
-    return [f.platform_fee_cents > 0 && w && w.platform_fee_cents === 0, `online fee ${f.platform_fee_cents}, walk-in fee ${w?.platform_fee_cents}; server: ${rr.status} ${decodeURIComponent(rr.location).slice(-60)}`];
+    return [f.platform_fee_cents === 10000 && w && w.platform_fee_cents === 10000, `online fee ${f.platform_fee_cents}, walk-in fee ${w?.platform_fee_cents}; server: ${rr.status} ${decodeURIComponent(rr.location).slice(-60)}`];
   });
 
   // ---------------- VALIDATION ----------------

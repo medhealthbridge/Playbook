@@ -49,6 +49,28 @@ export const depositCents = (price: number, percent: number) => Math.round((pric
 export const platformFeeCents = (price: number, rule: FeeRule) =>
   price <= 0 ? 0 : Math.min(rule.max_cents, Math.max(rule.min_cents, Math.round((price * rule.percent) / 100)));
 
+/** Playbook's cut, set by the platform admin: a fixed amount, or a percent of the base with an optional minimum. */
+export interface CutRule {
+  mode: "fixed" | "percent";
+  /** fixed: centavos. percent: 0-100. */
+  value: number;
+  min_cents?: number;
+}
+export function cutCents(baseCents: number, rule: CutRule): number {
+  if (rule.mode === "fixed") return Math.max(0, Math.round(rule.value));
+  const pct = Math.round((Math.max(0, baseCents) * rule.value) / 100);
+  return Math.max(rule.min_cents ?? 0, pct);
+}
+
+/** Monday-to-Sunday week containing `date` (YYYY-MM-DD). */
+export function weekRange(date: string): { start: string; end: string } {
+  const [y, m, d] = date.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  const back = (dt.getUTCDay() + 6) % 7;
+  const iso = (n: number) => new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10);
+  return { start: iso(-back), end: iso(6 - back) };
+}
+
 /** Refund owed on cancellation: everything paid if before the free-cancellation window, else nothing. */
 export function refundCents(paid: number, date: string, startMin: number, freeCancelHours: number, now: number): number {
   const cutoff = toEpoch(date, startMin) - freeCancelHours * 3_600_000;

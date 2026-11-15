@@ -1,9 +1,10 @@
 import "server-only";
 import { addDays, manilaToday } from "@/lib/booking/time";
 import {
-  HOLD_MIN, availableStarts, canCancel, depositCents, durationChoices, hmToMin, makeRef, platformFeeCents, priceCents, refundCents, type FeeRule,
+  HOLD_MIN, availableStarts, canCancel, cutCents, depositCents, durationChoices, hmToMin, makeRef, priceCents, refundCents,
 } from "@/lib/booking/engine";
 import { audit, q, q1, tx } from "./db";
+import { cutSettings, venuePaused } from "./billing";
 
 export type VenueRow = {
   id: string; slug: string; name: string; area: string; address: string; phone: string | null; description: string | null; status: string;
@@ -19,6 +20,7 @@ export type BookingRow = {
   customer_phone: string | null; sport: string; date: string; start_min: number; end_min: number; status: string; hold_expires_at: string | null;
   source: string; price_cents: number; deposit_cents: number; paid_cents: number; payment_status: string; platform_fee_cents: number;
   pay_method: string | null; checkout_session_id: string | null; payment_id: string | null; refund_cents: number; notes: string | null;
+  party_size: number | null; rental_cents: number;
   checked_in_at: string | null; cancelled_at: string | null; cancel_reason: string | null; created_at: string;
 };
 
@@ -26,7 +28,7 @@ const VENUE_COLS = `id, slug, name, area, address, phone, description, status, t
   deposit_percent, free_cancel_hours, allow_pay_at_venue, paymongo_public_key, paymongo_connected_at`;
 const BOOKING_COLS = `id, ref, venue_id, resource_id, user_id, customer_name, customer_email, customer_phone, sport, to_char(date,'YYYY-MM-DD') AS date,
   start_min, end_min, status, hold_expires_at, source, price_cents, deposit_cents, paid_cents, payment_status, platform_fee_cents, pay_method,
-  checkout_session_id, payment_id, refund_cents, notes, checked_in_at, cancelled_at, cancel_reason, created_at`;
+  checkout_session_id, payment_id, refund_cents, notes, party_size, rental_cents, checked_in_at, cancelled_at, cancel_reason, created_at`;
 
 export class BookingError extends Error {}
 
@@ -36,10 +38,6 @@ export async function expireHolds() {
             WHERE status='held' AND hold_expires_at < now()`);
 }
 
-export async function feeRule(): Promise<FeeRule> {
-  const r = await q1<{ value: FeeRule }>("SELECT value FROM platform_setting WHERE key='booking_fee'");
-  return r?.value ?? { percent: 3, min_cents: 1000, max_cents: 5000 };
-}
 
 export const publicVenues = (sport?: string) =>
   q<VenueRow & { courts: number; from_cents: number; sports: string[] }>(
@@ -95,7 +93,8 @@ export async function createHold(input: {
   user: { id: string; name: string; email: string }; phone?: string; notes?: string;
 }) {
   const { venue, resource: r, date, startMin, durationMin, sport, user } = input;
-  if (venue.status !== "active") throw new BookingError("This venue isn't taking bookings right now.");
+  if (venue.status !== "active" || (await venuePaused(venue.id))) throw new BookingError("This venue isn't taking bookings right now.");
+  if (await q1("SELECT 1 FROM venue_player_block WHERE venue_id=$1 AND user_id=$2", [venue.id, user.id])) throw new BookingError("This venue isn't taking bookings from your account. Contact the venue.");
   if (!r.active || r.venue_id !== venue.id) throw new BookingError("That court isn't available.");
   if (!r.sports.includes(sport)) throw new BookingError("That sport isn't played on this court.");
   if (!durationsFor(r).includes(durationMin)) throw new BookingError("Choose a valid duration.");
@@ -137,7 +136,7 @@ export async function createHold(input: {
 
 /** Confirm a booking (pay at venue, or after an online payment). Idempotent. */
 export async function confirmBooking(bookingId: string, payment: { method: "at_venue" | "online" | "cash"; paidCents?: number; paymentId?: string; actorId?: string | null }) {
-  const fee = await feeRule();
+  const cut = await cutSettings();
   return tx(async (run) => {
     const [b] = await run<BookingRow>(`SELECT ${BOOKING_COLS} FROM booking WHERE id=$1 FOR UPDATE`, [bookingId]);
     if (!b) throw new BookingError("Booking not found.");
@@ -155,8 +154,8 @@ export async function confirmBooking(bookingId: string, payment: { method: "at_v
       `UPDATE booking SET status='confirmed', confirmed_at=now(), hold_expires_at=NULL, cancelled_at=NULL, cancel_reason=NULL,
               pay_method=$2, paid_cents=$3, payment_status=$4, payment_id=coalesce($5, payment_id), platform_fee_cents=$6, updated_at=now()
         WHERE id=$1 RETURNING ${BOOKING_COLS}`,
-      // Platform fee applies to bookings made through Playbook, not walk-ins the venue enters itself.
-      [bookingId, payment.method, paid, paymentStatus, payment.paymentId ?? null, b.source === "online" ? platformFeeCents(b.price_cents, fee) : 0],
+      // Playbook's cut is owed once the court is confirmed, however it is paid. No cut on rentals.
+      [bookingId, payment.method, paid, paymentStatus, payment.paymentId ?? null, b.source === "online" || cut.staff_bookings ? cutCents(b.price_cents - b.rental_cents, cut.court) : 0],
     );
     await run("INSERT INTO audit_log (actor_id, action, target_type, target_id, meta) VALUES ($1,'booking.confirm','booking',$2,$3)", [payment.actorId ?? null, bookingId, JSON.stringify({ method: payment.method, paid })]);
     return u;

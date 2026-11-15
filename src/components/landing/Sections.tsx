@@ -455,6 +455,23 @@ export function PlansSection() {
           ))}
         </div>
         <div id="plans-panel" role="tabpanel" aria-labelledby={`tab-${tab}`}>
+          {tab === "venues" ? (
+            <div className="plan-grid">
+              <article className="plan is-current">
+                <h3>Free to list</h3>
+                <p>No subscription and no setup fee. Playbook earns only when you do.</p>
+                <p className="price">₱0 / month</p>
+                <ul>
+                  <li>Court calendar, walk-ins and recurring bookings</li>
+                  <li>Open play with automatic matchmaking by level</li>
+                  <li>Players pay you directly, by cash or online</li>
+                  <li>A small cut per open-play player or court booking, billed weekly</li>
+                  <li>No cut on your equipment rentals</li>
+                </ul>
+                <Link href="/venue/new" className="btn btn-sm btn-dark">List your venue</Link>
+              </article>
+            </div>
+          ) : (
           <div className="plan-grid">
             {plans.map((p) => {
               const current = tab === "players" ? state?.playerPlan === p.id : state?.venuePlans.kalye === p.id;
@@ -485,12 +502,13 @@ export function PlansSection() {
               );
             })}
           </div>
+          )}
         </div>
         <p className="plan-note">
           {tab === "players"
             ? "Proposed plan names and benefits. Final prices, limits and allowances will be announced. Court and table rental is always charged separately. Highlights also depend on the venue recording and publishing your game."
-            : "Proposed plan names and benefits. Final prices and configured limits will be announced. Venue subscriptions are separate from player memberships — changing one never changes the other."}{" "}
-          <span className="badge badge-demo">Demo selection</span>
+            : "The exact cut is shown in your venue dashboard before you take your first booking."}{" "}
+          {tab === "players" && <span className="badge badge-demo">Demo selection</span>}
         </p>
       </div>
     </section>

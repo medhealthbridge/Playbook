@@ -6,10 +6,11 @@ import { METRO_AREAS, int, pesoToCents, slugify, str } from "@/lib/server/form";
 import { requireUser, requireVenueRole, type VenueRole } from "@/lib/server/session";
 import { SPORTS } from "@/content/sports";
 import { BookingError, confirmBooking, expireHolds, venueById, venueResources } from "@/lib/server/bookings";
-import { makeRef, priceCents } from "@/lib/booking/engine";
+import { cutCents, makeRef, priceCents } from "@/lib/booking/engine";
 import { encrypt, decrypt } from "@/lib/server/crypto";
 import { PaymongoError, createCheckout, createWebhook, disableWebhook, keyMode, verifySecretKey } from "@/lib/server/paymongo";
-import { PLAN_IDS, platformPaymongo } from "@/lib/server/billing";
+import { cutSettings, platformPaymongo, venuePaused } from "@/lib/server/billing";
+import { setLevel } from "@/lib/server/skills";
 
 const SPORT_IDS = new Set(SPORTS.map((s) => s.id));
 const KIND_FOR: Record<string, string> = { billiards: "table", "table-tennis": "table", futsal: "pitch" };
@@ -51,7 +52,8 @@ export async function createVenue(formData: FormData) {
     courts.length === 0 ? "Add at least one court, table or pitch." :
     courts.some((c) => !SPORT_IDS.has(c.sport as never)) ? "Choose a sport for each court." :
     courts.some((c) => !Number.isFinite(c.rate) || c.rate <= 0) ? "Enter an hourly rate for each court." :
-    !formData.get("agree") ? "Please accept the venue agreement." : null;
+    !formData.get("agree") ? "Please accept the venue agreement." :
+    !formData.get("agree_privacy") ? "Please accept the Privacy Policy." : null;
   if (err) back("/venue/new", { error: err });
 
   const base = slugify(`${name}-${area}`);
@@ -172,6 +174,8 @@ const hm = (s: string) => {
   return m ? Number(m[1]) * 60 + Number(m[2]) : NaN;
 };
 
+const PAUSED = "New bookings and check-ins are paused until the overdue Playbook statement is paid (see Statements).";
+
 export async function walkIn(formData: FormData) {
   const venueId = str(formData, "venue_id", 60);
   const date = str(formData, "date", 10);
@@ -187,6 +191,7 @@ export async function walkIn(formData: FormData) {
   if (!r) back(path, { error: "Choose a court." });
   if (!Number.isFinite(start) || dur < 15 || dur > 600) back(path, { error: "Check the start time and duration." });
   const price = priceCents(r!.hourly_rate_cents, dur);
+  if (await venuePaused(venueId)) back(path, { error: PAUSED });
   await expireHolds(); // an expired online hold must not block the desk
   try {
     const row = await q1<{ id: string }>(
@@ -336,17 +341,6 @@ export async function setPayAtVenue(formData: FormData) {
 
 // ---------------------------------------------------------------- Phase 3: billing
 
-export async function choosePlan(formData: FormData) {
-  const venueId = str(formData, "venue_id", 60);
-  const { user } = await requireVenueRole(venueId, "owner");
-  const plan = str(formData, "plan", 10);
-  if (!(PLAN_IDS as string[]).includes(plan)) back(`/venue/${venueId}?tab=billing`, { error: "Choose a plan." });
-  await q("UPDATE venue SET plan=$2, plan_chosen_at=now(), updated_at=now() WHERE id=$1", [venueId, plan]);
-  await audit(user.id, "venue.plan", "venue", venueId, { plan });
-  revalidatePath(`/venue/${venueId}`);
-  back(`/venue/${venueId}?tab=billing`, { ok: "Plan saved. Billing starts when your free trial ends." });
-}
-
 export async function payInvoice(formData: FormData) {
   const venueId = str(formData, "venue_id", 60);
   const id = str(formData, "id", 60);
@@ -357,7 +351,7 @@ export async function payInvoice(formData: FormData) {
        JOIN venue_member m ON m.venue_id=v.id AND m.role='owner' JOIN "user" u ON u.id=m.user_id WHERE i.id=$1 AND i.venue_id=$2 LIMIT 1`,
     [id, venueId],
   );
-  if (!inv || inv.status !== "open") back(path, { error: "This invoice isn't open for payment." });
+  if (!inv || inv.status !== "open") back(path, { error: "This statement isn't open for payment." });
   const pm = await platformPaymongo();
   if (!pm) back(path, { error: "Online payment isn't available yet. Use the payment instructions below." });
   const base = process.env.BETTER_AUTH_URL || "https://playbook.databridgesol.space";
@@ -381,6 +375,8 @@ export async function createSeries(formData: FormData) {
   const venueId = str(formData, "venue_id", 60);
   const { user } = await requireVenueRole(venueId, "manager");
   await expireHolds();
+  if (await venuePaused(venueId)) back(`/venue/${venueId}?tab=recurring`, { error: PAUSED });
+  const cut = await cutSettings();
   const path = `/venue/${venueId}?tab=recurring`;
   const resourceId = str(formData, "resource_id", 60);
   const first = str(formData, "first_date", 10);
@@ -422,9 +418,9 @@ export async function createSeries(formData: FormData) {
     try {
       await q(
         `INSERT INTO booking (ref, venue_id, resource_id, customer_name, customer_phone, customer_email, sport, date, start_min, end_min, status, source,
-                              price_cents, deposit_cents, pay_method, confirmed_at, series_id, notes, created_by)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'confirmed','staff',$11,0,'at_venue',now(),$12,$13,$14)`,
-        [makeRef(), venueId, r!.id, name, phone || null, email || null, r!.sports[0], date, start, start + dur, price, series!.id, notes || null, user.id],
+                              price_cents, deposit_cents, pay_method, confirmed_at, series_id, notes, created_by, platform_fee_cents)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'confirmed','staff',$11,0,'at_venue',now(),$12,$13,$14,$15)`,
+        [makeRef(), venueId, r!.id, name, phone || null, email || null, r!.sports[0], date, start, start + dur, price, series!.id, notes || null, user.id, cut.staff_bookings ? cutCents(price, cut.court) : 0],
       );
       made.push(date);
     } catch (e) {
@@ -454,4 +450,77 @@ export async function cancelSeries(formData: FormData) {
   await audit(user.id, "series.cancel", "booking_series", id, { cancelled: r?.n ?? 0 });
   revalidatePath(`/venue/${venueId}`);
   back(`/venue/${venueId}?tab=recurring`, { ok: `Recurring booking cancelled (${r?.n ?? 0} upcoming dates freed).` });
+}
+
+// ---------------------------------------------------------------- rentals and players
+
+export async function addRental(formData: FormData) {
+  const venueId = str(formData, "venue_id", 60);
+  const { user } = await requireVenueRole(venueId, "manager");
+  const path = `/venue/${venueId}?tab=courts`;
+  const name = str(formData, "name", 60);
+  const price = pesoToCents(formData, "price");
+  if (name.length < 2) back(path, { error: "Enter what you rent out (for example: Paddle)." });
+  if (!Number.isFinite(price) || price < 0) back(path, { error: "Enter a rental price." });
+  await q("INSERT INTO rental_item (venue_id, name, price_cents) VALUES ($1,$2,$3)", [venueId, name, price]);
+  await audit(user.id, "rental.add", "venue", venueId, { name, price });
+  revalidatePath(`/venue/${venueId}`);
+  back(path, { ok: `${name} added to rentals.` });
+}
+
+export async function updateRental(formData: FormData) {
+  const venueId = str(formData, "venue_id", 60);
+  const { user } = await requireVenueRole(venueId, "manager");
+  const path = `/venue/${venueId}?tab=courts`;
+  const price = pesoToCents(formData, "price");
+  if (!Number.isFinite(price) || price < 0) back(path, { error: "Enter a rental price." });
+  const r = await q1<{ id: string }>("UPDATE rental_item SET price_cents=$3, active=$4 WHERE id=$1 AND venue_id=$2 RETURNING id",
+    [str(formData, "id", 60), venueId, price, str(formData, "active") === "1"]);
+  if (!r) back(path, { error: "Rental item not found at this venue." });
+  await audit(user.id, "rental.update", "venue", venueId, { id: r!.id, price });
+  revalidatePath(`/venue/${venueId}`);
+  back(path, { ok: "Rental updated." });
+}
+
+/** The player must have booked or joined open play at this venue for venue staff to manage them. */
+async function venuePlayer(venueId: string, userId: string) {
+  return q1<{ id: string; name: string }>(
+    `SELECT u.id, u.name FROM "user" u WHERE u.id=$2 AND (
+       EXISTS (SELECT 1 FROM booking b WHERE b.venue_id=$1 AND b.user_id=u.id)
+       OR EXISTS (SELECT 1 FROM open_play_player p JOIN open_play_session s ON s.id=p.session_id WHERE s.venue_id=$1 AND p.user_id=u.id))`,
+    [venueId, userId],
+  );
+}
+
+export async function setPlayerLevel(formData: FormData) {
+  const venueId = str(formData, "venue_id", 60);
+  const { user } = await requireVenueRole(venueId, "staff");
+  const path = `/venue/${venueId}?tab=players`;
+  const level = str(formData, "level", 15);
+  const sport = str(formData, "sport", 30);
+  if (!["beginner", "intermediate", "advanced"].includes(level) || !SPORTS.some((s) => s.id === sport)) back(path, { error: "Choose a sport and level." });
+  const p = await venuePlayer(venueId, str(formData, "user_id", 60));
+  if (!p) back(path, { error: "Player not found at this venue." });
+  await setLevel(p!.id, sport, level as "beginner" | "intermediate" | "advanced");
+  await audit(user.id, "player.level", "user", p!.id, { venueId, sport, level });
+  revalidatePath(`/venue/${venueId}`);
+  back(path, { ok: `${p!.name} set to ${level === "advanced" ? "expert" : level}.` });
+}
+
+export async function blockPlayer(formData: FormData) {
+  const venueId = str(formData, "venue_id", 60);
+  const { user } = await requireVenueRole(venueId, "owner");
+  const path = `/venue/${venueId}?tab=players`;
+  const unblock = str(formData, "action") === "unblock";
+  const p = await venuePlayer(venueId, str(formData, "user_id", 60));
+  if (!p) back(path, { error: "Player not found at this venue." });
+  if (unblock) await q("DELETE FROM venue_player_block WHERE venue_id=$1 AND user_id=$2", [venueId, p!.id]);
+  else {
+    const reason = str(formData, "reason", 200);
+    if (reason.length < 4) back(path, { error: "Give a reason for blocking this player." });
+    await q("INSERT INTO venue_player_block (venue_id, user_id, reason, created_by) VALUES ($1,$2,$3,$4) ON CONFLICT (venue_id, user_id) DO UPDATE SET reason=EXCLUDED.reason", [venueId, p!.id, reason, user.id]);
+  }
+  await audit(user.id, unblock ? "player.unblock" : "player.block", "user", p!.id, { venueId });
+  revalidatePath(`/venue/${venueId}`);
+  back(path, { ok: unblock ? `${p!.name} can book here again.` : `${p!.name} can no longer book or join here.` });
 }

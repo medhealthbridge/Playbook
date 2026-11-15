@@ -11,9 +11,9 @@ export default function PrivacyPage() {
           <h1>Privacy Policy</h1>
           <p>Playbook processes personal data in line with the Philippine Data Privacy Act of 2012 (RA 10173).</p>
           <h2>What we collect</h2>
-          <p>Account details (name, email, password stored as a secure hash), bookings, venue business details, and technical data needed to keep the service secure.</p>
+          <p>Account details (name, email, password stored as a secure hash), bookings, open-play sign-ups, game results and your level per sport, payments you make to venues (amount and method, never card or wallet details), venue business details, the date you agreed to these terms, and technical data needed to keep the service secure.</p>
           <h2>How we use it</h2>
-          <p>To run bookings, let venues manage their schedule, send service emails, prevent fraud, and meet legal obligations. Venues receive the booking details they need to serve you.</p>
+          <p>To run bookings, let venues manage their schedule, send service emails, prevent fraud, and meet legal obligations. Venues receive the booking details they need to serve you, and can see the level and win and loss record of players who book or play with them. On a venue&apos;s open-play queue screen, players appear by first name and last initial only.</p>
           <h2>Recordings</h2>
           <p>Game recordings exist only at venues that record and are shared only with authorised participants of the booking.</p>
           <h2>Your rights</h2>

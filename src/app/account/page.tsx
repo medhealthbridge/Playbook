@@ -4,6 +4,10 @@ import { Flash, PortalHeader, VenueStatus, peso } from "@/components/portal/Port
 import { SignOutButton } from "@/components/auth/SignOutButton";
 import { q } from "@/lib/server/db";
 import { isPlatformAdmin, myVenues, requireUser } from "@/lib/server/session";
+import { SPORTS } from "@/content/sports";
+import { LEVEL_LABEL } from "@/lib/openplay/rating";
+import { skillsFor } from "@/lib/server/skills";
+import { setMyLevel } from "./actions";
 
 export const metadata: Metadata = { title: "Your account — Playbook", robots: { index: false } };
 export const dynamic = "force-dynamic";
@@ -20,6 +24,7 @@ export default async function AccountPage({ searchParams }: { searchParams: Prom
       [user.id],
     ),
   ]);
+  const skills = await skillsFor(user.id);
   const [feed, replies] = await Promise.all([
     q<{ id: string; title: string; body: string; created_at: string; venue: string; slug: string }>(
       `SELECT a.id, a.title, a.body, a.created_at, v.name AS venue, v.slug FROM venue_announcement a JOIN venue_follower f ON f.venue_id=a.venue_id AND f.user_id=$1
@@ -107,6 +112,26 @@ export default async function AccountPage({ searchParams }: { searchParams: Prom
                   {admin && (<><dt>Role</dt><dd><span className="badge badge-lime">Platform admin</span></dd></>)}
                 </dl>
               </section>
+              <section className="app-card" aria-labelledby="lv">
+                <h3 id="lv">Your levels</h3>
+                {skills.length === 0 ? <p className="hint">Tell venues how you play so open play can match you with players of your level.</p> : (
+                  <ul className="plain-list">
+                    {skills.map((k) => (
+                      <li key={k.sport}>{SPORTS.find((x) => x.id === k.sport)?.name ?? k.sport}: <strong>{LEVEL_LABEL[k.level]}</strong> <span className="hint">· {k.games} games · {k.wins}W–{k.losses}L</span></li>
+                    ))}
+                  </ul>
+                )}
+                <form action={setMyLevel} className="form-grid">
+                  <div className="field"><label htmlFor="lv-sport">Sport</label>
+                    <select id="lv-sport" name="sport" className="select" defaultValue="pickleball">{SPORTS.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select>
+                  </div>
+                  <div className="field"><label htmlFor="lv-level">Level</label>
+                    <select id="lv-level" name="level" className="select" defaultValue="intermediate"><option value="beginner">Beginner</option><option value="intermediate">Intermediate</option><option value="advanced">Expert</option></select>
+                  </div>
+                  <button className="btn btn-sm btn-outline" type="submit">Save level</button>
+                  <p className="hint">After your first scored game in a sport, your level follows your results.</p>
+                </form>
+              </section>
               <section className="app-card" aria-labelledby="vn">
                 <h3 id="vn">Your venues</h3>
                 {venues.length === 0 ? (
@@ -116,7 +141,7 @@ export default async function AccountPage({ searchParams }: { searchParams: Prom
                     {venues.map((v) => (
                       <li key={v.id}>
                         <Link href={`/venue/${v.id}`}>{v.name}</Link> <VenueStatus status={v.status} />
-                        <span className="hint"> · {v.role}</span>
+                        <span className="hint"> · {v.role === "staff" ? "facilitator" : v.role}</span>
                       </li>
                     ))}
                   </ul>

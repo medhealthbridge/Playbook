@@ -65,6 +65,7 @@ import { verifyPaymongoSignature } from "../src/lib/payments/paymongoSignature.t
   console.log(`${passed} checks passed in total.`);
 }
 
+
 // Open play queue
 import { afterGame, nextGroup, publicName, teams } from "../src/lib/openplay/queue.ts";
 {
@@ -79,5 +80,41 @@ import { afterGame, nextGroup, publicName, teams } from "../src/lib/openplay/que
   test("winners stay, losers queue", () => assert.deepEqual(afterGame("winners_stay", ["a", "d"], ["b", "c"], "b", 1), { toQueue: ["a", "d"], stay: ["b", "c"] }));
   test("winners rotate off at the streak cap", () => assert.deepEqual(afterGame("winners_stay", ["a", "d"], ["b", "c"], "b", 2), { toQueue: ["a", "d", "b", "c"], stay: [] }));
   test("public names hide surnames", () => { assert.equal(publicName("Juan Dela Cruz"), "Juan C."); assert.equal(publicName("Migs"), "Migs"); });
+  console.log(`${passed} checks passed in total.`);
+}
+
+// ---------------------------------------------------------------- cut, weekly statements, levels
+import { cutCents, weekRange } from "../src/lib/booking/engine.ts";
+import { BASE_RATING, levelFor, ratingDelta } from "../src/lib/openplay/rating.ts";
+{
+  test("fixed cut is the same whatever the price (even a free session)", () => {
+    assert.equal(cutCents(15000, { mode: "fixed", value: 3000 }), 3000);
+    assert.equal(cutCents(0, { mode: "fixed", value: 3000 }), 3000);
+  });
+  test("percent cut follows the price, with an optional minimum", () => {
+    assert.equal(cutCents(15000, { mode: "percent", value: 20 }), 3000);
+    assert.equal(cutCents(40000, { mode: "percent", value: 20, min_cents: 0 }), 8000);
+    assert.equal(cutCents(5000, { mode: "percent", value: 20, min_cents: 2000 }), 2000);
+    assert.equal(cutCents(0, { mode: "percent", value: 20 }), 0);
+  });
+  test("weeks run Monday to Sunday", () => {
+    assert.deepEqual(weekRange("2026-11-18"), { start: "2026-11-16", end: "2026-11-22" }); // a Wednesday
+    assert.deepEqual(weekRange("2026-11-16"), { start: "2026-11-16", end: "2026-11-22" }); // Monday
+    assert.deepEqual(weekRange("2026-11-22"), { start: "2026-11-16", end: "2026-11-22" }); // Sunday
+    assert.deepEqual(weekRange("2027-01-01"), { start: "2026-12-28", end: "2027-01-03" }); // across a year end
+  });
+  test("levels follow the rating", () => {
+    assert.equal(levelFor(BASE_RATING.beginner), "beginner");
+    assert.equal(levelFor(BASE_RATING.intermediate), "intermediate");
+    assert.equal(levelFor(BASE_RATING.advanced), "advanced");
+    assert.equal(levelFor(1149), "beginner");
+    assert.equal(levelFor(1450), "advanced");
+  });
+  test("beating a stronger team moves the rating more than beating a weaker one", () => {
+    assert.equal(ratingDelta(1300, 1300), 12);
+    assert.ok(ratingDelta(1000, 1600) > ratingDelta(1300, 1300));
+    assert.ok(ratingDelta(1600, 1000) < ratingDelta(1300, 1300));
+    assert.ok(ratingDelta(1600, 1000) >= 1);
+  });
   console.log(`${passed} checks passed in total.`);
 }

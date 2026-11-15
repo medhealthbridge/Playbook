@@ -7,12 +7,15 @@ import { formatDate, formatRange } from "@/lib/booking/time";
 import { q } from "@/lib/server/db";
 import { gamesPlayed, liveGames, sessionById, sessionPlayers, type Player } from "@/lib/server/openplay";
 import { requireVenueRole } from "@/lib/server/session";
-import { fill, gameOver, sessionStatus, staffCheckIn, staffPlayerStatus, staffWalkIn } from "../../../../openplay/actions";
+import { PaymentBell } from "@/components/portal/PaymentBell";
+import { RentalFields } from "@/components/portal/RentalFields";
+import { venueRentals } from "@/lib/server/rentals";
+import { fill, gameOver, sessionStatus, staffCheckIn, staffPlayerStatus, staffVoid, staffWalkIn } from "../../../../openplay/actions";
 
 export const metadata: Metadata = { title: "Open play — Playbook", robots: { index: false } };
 export const dynamic = "force-dynamic";
 
-const SKILL: Record<string, string> = { beginner: "Beginner", intermediate: "Intermediate", advanced: "Advanced" };
+const SKILL: Record<string, string> = { beginner: "Beginner", intermediate: "Intermediate", advanced: "Expert" };
 
 export default async function OpenPlayControl({ params, searchParams }: { params: Promise<{ id: string; sid: string }>; searchParams: Promise<Record<string, string | undefined>> }) {
   const { id, sid } = await params;
@@ -20,11 +23,12 @@ export default async function OpenPlayControl({ params, searchParams }: { params
   await requireVenueRole(id, "staff");
   const s = await sessionById(sid);
   if (!s || s.venue_id !== id) notFound();
-  const [players, games, courts, played] = await Promise.all([
+  const [players, games, courts, played, rentals] = await Promise.all([
     sessionPlayers(sid),
     liveGames(sid),
     q<{ id: string; name: string }>("SELECT id, name FROM resource WHERE id = ANY($1) ORDER BY sort, created_at", [s.court_ids]),
     gamesPlayed(sid),
+    venueRentals(id),
   ]);
   const byId = new Map(players.map((p) => [p.id, p]));
   const waiting = players.filter((p) => p.status === "waiting");
@@ -59,12 +63,13 @@ export default async function OpenPlayControl({ params, searchParams }: { params
       <div className="app-body">
         <div className="container app-stack">
           <Flash ok={sp.ok} error={sp.error} />
+          <PaymentBell venueId={id} />
           <div className="stat-row">
             <div className="stat"><b>{formatRange(s.start_min, s.end_min)}</b><span>{formatDate(s.date)}</span></div>
             <div className="stat"><b>{waiting.length}</b><span>Waiting</span></div>
             <div className="stat"><b>{playing.length}</b><span>On court</span></div>
             <div className="stat"><b>{played?.n ?? 0}</b><span>Games played</span></div>
-            <div className="stat"><b>{peso(collected)}</b><span>Collected ({peso(s.fee_cents)} each)</span></div>
+            <div className="stat"><b>{peso(collected)}</b><span>Collected ({peso(s.fee_cents)} each, plus rentals)</span></div>
           </div>
 
           <section className="app-card">
@@ -88,11 +93,15 @@ export default async function OpenPlayControl({ params, searchParams }: { params
                         <p className="op-team"><span className="badge badge-lime">A</span> {names(g.team_a)}</p>
                         <p className="op-vs">vs</p>
                         <p className="op-team"><span className="badge on-dark">B</span> {names(g.team_b)}</p>
-                        <div className="chip-row">
-                          <form action={gameOver}>{hidden({ game_id: g.id, winner: "a" })}<button className="btn btn-xs" type="submit">A won</button></form>
-                          <form action={gameOver}>{hidden({ game_id: g.id, winner: "b" })}<button className="btn btn-xs" type="submit">B won</button></form>
-                          <form action={gameOver}>{hidden({ game_id: g.id, winner: "" })}<button className="btn btn-xs btn-outline" type="submit">Game over</button></form>
-                        </div>
+                        <form action={gameOver} className="score-form">
+                          {hidden({ game_id: g.id })}
+                          <label className="hint" htmlFor={`sa-${g.id}`}>Final score A</label>
+                          <input id={`sa-${g.id}`} className="input" name="score_a" type="number" min={0} max={99} inputMode="numeric" required />
+                          <label className="hint" htmlFor={`sb-${g.id}`}>B</label>
+                          <input id={`sb-${g.id}`} className="input" name="score_b" type="number" min={0} max={99} inputMode="numeric" required />
+                          <button className="btn btn-xs" type="submit">Save score</button>
+                        </form>
+                        <form action={gameOver}>{hidden({ game_id: g.id, no_result: "1" })}<button className="btn btn-xs btn-outline" type="submit">End without a result</button></form>
                       </>
                     ) : (
                       <p className="hint">{live ? (waiting.length >= 4 ? "Free — press Fill free courts" : "Free — waiting for 4 players") : "Not started"}</p>
@@ -114,6 +123,13 @@ export default async function OpenPlayControl({ params, searchParams }: { params
                       <span className="op-name">{p.name}<span className="hint"> · {SKILL[p.skill]} · {p.games_played} games</span></span>
                       <PlayerAction p={p} status="resting" label="Rest" hidden={hidden} />
                       <PlayerAction p={p} status="left" label="Left" hidden={hidden} />
+                      {p.games_played === 0 && (
+                        <form action={staffVoid} className="inline-form">
+                          {hidden({ player_id: p.id })}
+                          <input className="input" name="reason" placeholder="Void reason" aria-label={`Reason to void ${p.name}`} required minLength={4} style={{ maxWidth: 130 }} />
+                          <button className="btn btn-xs btn-danger" type="submit">Void</button>
+                        </form>
+                      )}
                     </li>
                   ))}
                 </ol>
@@ -132,18 +148,27 @@ export default async function OpenPlayControl({ params, searchParams }: { params
             <aside className="app-stack">
               <section className="app-card">
                 <h3>Check in ({registered.length})</h3>
+                <p className="hint">No payment, no play: type the cash you received, or the player pays online and shows as paid.</p>
                 {registered.length === 0 ? <p className="hint">Players who join with the QR code appear here.</p> : (
                   <ul className="op-queue">
-                    {registered.map((p) => (
-                      <li key={p.id}>
-                        <span className="op-name">{p.name}<span className="hint"> · {SKILL[p.skill]}</span>{p.paid_cents >= s.fee_cents && s.fee_cents > 0 && <> <span className="badge badge-ok">paid online</span></>}</span>
-                        <form action={staffCheckIn} className="inline-form">
-                          {hidden({ player_id: p.id })}
-                          <input className="input" name="paid" inputMode="decimal" defaultValue={p.paid_cents >= s.fee_cents ? 0 : (s.fee_cents - p.paid_cents) / 100} aria-label={`Collected from ${p.name}`} style={{ maxWidth: 90 }} />
-                          <button className="btn btn-xs" type="submit">Check in</button>
-                        </form>
-                      </li>
-                    ))}
+                    {registered.map((p) => {
+                      const due = Math.max(0, s.fee_cents + p.rental_cents - p.paid_cents);
+                      return (
+                        <li key={p.id}>
+                          <span className="op-name">{p.name}<span className="hint"> · {SKILL[p.skill]}{p.rental_cents > 0 ? ` · rentals ${peso(p.rental_cents)}` : ""}</span>{p.paid_online && <> <span className="badge badge-ok">paid online</span></>}</span>
+                          <form action={staffCheckIn} className="inline-form">
+                            {hidden({ player_id: p.id })}
+                            {due > 0 ? (
+                              <>
+                                <label className="hint" htmlFor={`cash-${p.id}`}>Cash received ₱</label>
+                                <input id={`cash-${p.id}`} className="input" name="paid" inputMode="decimal" placeholder={String(due / 100)} required style={{ maxWidth: 90 }} />
+                              </>
+                            ) : <input type="hidden" name="paid" value="0" />}
+                            <button className="btn btn-xs" type="submit">Check in</button>
+                          </form>
+                        </li>
+                      );
+                    })}
                   </ul>
                 )}
               </section>
@@ -153,10 +178,11 @@ export default async function OpenPlayControl({ params, searchParams }: { params
                 <div className="field"><label htmlFor="wk-name">Name</label><input id="wk-name" name="name" className="input" required /></div>
                 <div className="field-row">
                   <div className="field"><label htmlFor="wk-skill">Level</label>
-                    <select id="wk-skill" name="skill" className="select" defaultValue="intermediate"><option value="beginner">Beginner</option><option value="intermediate">Intermediate</option><option value="advanced">Advanced</option></select>
+                    <select id="wk-skill" name="skill" className="select" defaultValue="intermediate"><option value="beginner">Beginner</option><option value="intermediate">Intermediate</option><option value="advanced">Expert</option></select>
                   </div>
-                  <div className="field"><label htmlFor="wk-paid">Paid (₱)</label><input id="wk-paid" name="paid" inputMode="decimal" className="input" defaultValue={s.fee_cents / 100} /></div>
+                  <div className="field"><label htmlFor="wk-paid">Cash received (₱)</label><input id="wk-paid" name="paid" inputMode="decimal" className="input" placeholder={String(s.fee_cents / 100)} required /></div>
                 </div>
+                <RentalFields items={rentals} />
                 <button className="btn btn-sm" type="submit">Add to queue</button>
               </form>
               <section className="app-card">

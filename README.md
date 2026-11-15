@@ -47,7 +47,8 @@ npm test                     # pure rules: availability, prices, fees, refunds, 
 ```
 
 End-to-end suites run against a local production build on the dev database (see `tests/qa/README.md`):
-`tests/qa/seed.js`, then `tests/qa/qa.js` (38 checks: auth, roles, tenant isolation, tampered ids, booking
+`tests/qa/seed.js`, then `tests/qa/model.js` (19 checks: cut, no-payment-no-play, voids, scores and levels,
+rentals, weekly statements, automatic pause), `tests/qa/qa.js` (38 checks: auth, roles, tenant isolation, tampered ids, booking
 races, validation, phone layout) and `tests/qa/quality.js` (hold limits, webhook signature, replay window,
 idempotency, cross-venue webhook, security headers).
 
@@ -70,8 +71,8 @@ Never drop or rename a column in the same release that stops using it (expand �
 
 ### Operations
 
-- Monthly invoices: Vercel Cron calls `/api/cron/invoices` at 01:00 UTC on the 1st (09:00 Manila) with
-  `CRON_SECRET`; re-running never duplicates invoices. Manual run: `/admin → Billing → Create invoices`.
+- Weekly statements: Vercel Cron calls `/api/cron/invoices` at 01:00 UTC every Monday (09:00 Manila) with
+  `CRON_SECRET`; re-running never duplicates statements. Manual run: `/admin → Billing → Create weekly statements`.
 - PayMongo webhooks: one per venue (`/api/paymongo/webhook/<venueId>`) and one for Playbook invoices
   (`/api/paymongo/platform`). Signatures and a 5-minute timestamp window are checked; each event id is processed
   once; a failed event is released so PayMongo's retry is processed.
@@ -97,11 +98,13 @@ never blocks booking.
 | Area | Status |
 |---|---|
 | Accounts | Email + password (Better Auth), email verification and password reset once Resend is configured, rate-limited sign-in/up, platform admins from `PLATFORM_ADMIN_EMAILS` |
-| Venues | Registration → admin approval → trial; owner / manager / front-desk roles enforced on the server for every action |
+| Roles | Player, facilitator (front desk), owner, platform admin; every action is checked on the server |
+| Venues | Registration → admin approval → live. Listing is free |
 | Bookings | Real availability, 10-minute holds, Postgres exclusion constraint against double booking, pay online (venue's own PayMongo) or at the venue, cancellations and refunds, per-account limits on unpaid holds |
 | Front desk | Calendar, walk-ins, check-in, no-show, blocks, recurring weekly bookings |
-| Open play | Queue, QR join, court rotation, TV board, online or desk fees |
-| Billing | Plans, per-booking fee, monthly invoices (cron), manual or PayMongo invoice payment |
+| Open play | QR join with consent, level per sport (moves with results), matchmaking by level, facilitator enters final scores, TV board. No payment recorded, no play; voids need a reason and are visible to the admin |
+| Rentals | Per-venue items (paddle, ball) added to court bookings and open play; no platform cut |
+| Money | Players pay venues (cash or the venue's PayMongo). Playbook's cut is admin-set (fixed or percent, separately for open play and courts), counted at check-in or confirmation, billed on weekly statements; overdue venues pause automatically (days and on/off are admin settings). Payment bell beeps on venue screens when an online payment lands |
 | Messages | Booking chat, venue news, follows (emails once Resend is configured) |
 | Not built | Venue photos, account deletion / data export, staff invite emails, ownership transfer, recordings/highlights for real venues (homepage clips are labelled demo) |
 

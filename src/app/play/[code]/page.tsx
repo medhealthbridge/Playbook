@@ -12,6 +12,10 @@ import { joinOpenPlay, payOpenPlayFee, playerSelfStatus } from "../../openplay/a
 import { decrypt } from "@/lib/server/crypto";
 import { checkoutPayments } from "@/lib/server/paymongo";
 import { markOpenPlayPaid } from "@/lib/server/openplay";
+import { RentalFields } from "@/components/portal/RentalFields";
+import { venueRentals } from "@/lib/server/rentals";
+import { skillFor } from "@/lib/server/skills";
+import { LEVEL_LABEL } from "@/lib/openplay/rating";
 
 export const metadata: Metadata = { title: "Join open play — Playbook", robots: { index: false } };
 export const dynamic = "force-dynamic";
@@ -43,6 +47,8 @@ export default async function PlayPage({ params, searchParams }: { params: Promi
     }
   }
   const paidOnline = !!extra?.paid_online || !!paidNote;
+  const [rentals, profile] = await Promise.all([venueRentals(s.venue_id), auth ? skillFor(auth.user.id, s.sport) : Promise.resolve(null)]);
+  const due = me ? Math.max(0, s.fee_cents + me.rental_cents - me.paid_cents) : 0;
   const waiting = players.filter((p) => p.status === "waiting");
   const pos = me ? waiting.findIndex((p) => p.id === me.id) + 1 : 0;
   const myGame = me ? games.find((g) => g.team_a.includes(me.id) || g.team_b.includes(me.id)) : undefined;
@@ -66,7 +72,7 @@ export default async function PlayPage({ params, searchParams }: { params: Promi
           <section className="app-card">
             <dl className="kv">
               <dt>When</dt><dd>{formatDate(s.date)}, {formatRange(s.start_min, s.end_min)}</dd>
-              <dt>Fee</dt><dd>{s.fee_cents ? `${peso(s.fee_cents)} per player, paid at the front desk` : "Free"}</dd>
+              <dt>Fee</dt><dd>{s.fee_cents ? `${peso(s.fee_cents)} per player${venuePay?.secret ? ", pay online or at the front desk" : ", paid at the front desk"}` : "Free"}</dd>
               <dt>Players</dt><dd>{players.filter((p) => p.status !== "left").length} / {s.max_players} · {s.court_ids.length} courts</dd>
               <dt>Status</dt><dd>{ended ? "Ended" : s.status === "live" ? `Live · ${waiting.length} waiting` : "Starts soon"}</dd>
             </dl>
@@ -82,25 +88,38 @@ export default async function PlayPage({ params, searchParams }: { params: Promi
             <form action={joinOpenPlay} className="app-card form-grid">
               <h2>Join this session</h2>
               <input type="hidden" name="code" value={s.code} />
-              <div className="field">
-                <label htmlFor="skill">Your level</label>
-                <select id="skill" name="skill" className="select" defaultValue="intermediate">
-                  <option value="beginner">Beginner — learning the rules and the dink</option>
-                  <option value="intermediate">Intermediate — consistent rallies, play the kitchen</option>
-                  <option value="advanced">Advanced — fast hands, competitive play</option>
-                </select>
-              </div>
+              {profile ? (
+                <>
+                  <input type="hidden" name="skill" value={profile.level} />
+                  <p>Your level: <strong>{LEVEL_LABEL[profile.level]}</strong> <span className="hint">({profile.wins} wins, {profile.losses} losses). It moves with your results.</span></p>
+                </>
+              ) : (
+                <div className="field">
+                  <label htmlFor="skill">Your level</label>
+                  <select id="skill" name="skill" className="select" defaultValue="intermediate">
+                    <option value="beginner">Beginner — learning the rules and the dink</option>
+                    <option value="intermediate">Intermediate — consistent rallies, play the kitchen</option>
+                    <option value="advanced">Expert — fast hands, competitive play</option>
+                  </select>
+                  <p className="hint">Saved to your profile. After your first games it follows your results.</p>
+                </div>
+              )}
+              <RentalFields items={rentals} />
+              <label className="check">
+                <input type="checkbox" name="consent" required />
+                <span>I agree to the <Link href="/terms">Terms</Link> and <Link href="/privacy">Privacy Policy</Link>, and to my first name and last initial being shown on the venue&apos;s queue screen.</span>
+              </label>
               <button className="btn" type="submit">Join the queue</button>
             </form>
           ) : (
             <section className={`app-card op-me op-me-${me.status}`}>
-              {me.status === "registered" && (<><h2>You&apos;re registered</h2><p>Show this screen at the front desk to check in{s.fee_cents && !paidOnline ? ` and pay ${peso(s.fee_cents)}` : ""}. Then you&apos;re in the queue.</p><p className="op-big">{me.name}</p></>)}
+              {me.status === "registered" && (<><h2>You&apos;re registered</h2><p>Show this screen at the front desk to check in{due > 0 ? ` and pay ${peso(due)}` : ""}. No payment, no play: you join the queue once it is recorded.</p><p className="op-big">{me.name}</p></>)}
               {me.status === "waiting" && (<><h2>You&apos;re in the queue</h2><p className="op-big">#{pos}</p><p>{pos <= 4 && freeCourts > 0 ? "You're up next — head to the courts." : pos <= 4 ? "You're in the next group. Stay close to the courts." : `${pos - 1} players ahead of you.`}</p></>)}
               {me.status === "playing" && myGame && (<><h2>You&apos;re on {court?.name}</h2><p className="op-big">{court?.name}</p><p>With {mates.join(", ") || "your partner"} · vs {opps.join(" & ")}</p></>)}
               {me.status === "resting" && (<><h2>You&apos;re resting</h2><p>Jump back in whenever you&apos;re ready. You&apos;ll go to the end of the queue.</p></>)}
-              {s.fee_cents > 0 && (paidOnline ? <p><span className="badge badge-ok">Fee paid online</span></p> : venuePay?.secret && (
-                <form action={payOpenPlayFee}><input type="hidden" name="code" value={s.code} /><button className="btn btn-sm" type="submit">Pay {peso(s.fee_cents)} now · GCash, Maya, card</button></form>
-              ))}
+              {paidOnline ? <p><span className="badge badge-ok">Paid online</span></p> : due > 0 && me.status === "registered" && venuePay?.secret && (
+                <form action={payOpenPlayFee}><input type="hidden" name="code" value={s.code} /><button className="btn btn-sm" type="submit">Pay {peso(due)} now · GCash, Maya, QR Ph, card</button></form>
+              )}
               <p className="hint">Games played: {me.games_played}</p>
               <div className="chip-row">
                 {me.status === "waiting" && status("resting", "Take a break")}

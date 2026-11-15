@@ -68,7 +68,11 @@ export default async function NewVenuePage({ searchParams }: { searchParams: Pro
             <fieldset className="form-section">
               <label className="check">
                 <input type="checkbox" name="agree" required />
-                <span>I&apos;m authorised to list this venue and agree to the <Link href="/terms#venues">Venue Agreement</Link>, including the monthly subscription and per-booking platform fee.</span>
+                <span>I&apos;m authorised to list this venue and agree to the <Link href="/terms#venues">Venue Agreement</Link>, including Playbook&apos;s cut per open-play player and per court booking, billed weekly. Listing is free.</span>
+              </label>
+              <label className="check">
+                <input type="checkbox" name="agree_privacy" required />
+                <span>I have read the <Link href="/privacy">Privacy Policy</Link> and will handle my players&apos; personal data only to run their bookings.</span>
               </label>
               <button className="btn" type="submit">Submit for review</button>
             </fieldset>

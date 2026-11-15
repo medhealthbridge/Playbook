@@ -4,12 +4,14 @@ import { revalidatePath } from "next/cache";
 import { q1 } from "@/lib/server/db";
 import { int, pesoToCents, str } from "@/lib/server/form";
 import {
-  OpenPlayError, addWalkIn, checkInPlayer, createSession, endGame, fillCourts, joinSession, sessionByCode, sessionById, setPlayerStatus, setSessionStatus,
+  OpenPlayError, addWalkIn, checkInPlayer, createSession, endGame, fillCourts, joinSession, sessionByCode, sessionById, setPlayerStatus, setSessionStatus, voidPlayer,
 } from "@/lib/server/openplay";
 import { getSession, requireVenueRole } from "@/lib/server/session";
 import type { Skill } from "@/lib/openplay/queue";
 import { decrypt } from "@/lib/server/crypto";
 import { createCheckout } from "@/lib/server/paymongo";
+import { readRentalLines } from "@/lib/server/rentals";
+import { venuePaused } from "@/lib/server/billing";
 
 const SKILLS: Skill[] = ["beginner", "intermediate", "advanced"];
 const to = (path: string, m: { ok?: string; error?: string }) =>
@@ -51,6 +53,7 @@ export async function createOpenPlay(formData: FormData) {
   const maxPlayers = int(formData, "max_players", 24);
   const mode = str(formData, "mode", 20) === "winners_stay" ? "winners_stay" : "all_off";
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !(startMin < endMin)) to(path, { error: "Check the date and times." });
+  if (await venuePaused(venueId)) to(path, { error: "New sessions are paused until the overdue Playbook statement is paid (see Statements)." });
   if (courtIds.length === 0) to(path, { error: "Choose at least one court." });
   if (!Number.isFinite(fee) || maxPlayers < 4 || maxPlayers > 200) to(path, { error: "Check the fee and player limit." });
   const owned = await q1<{ n: number }>("SELECT count(*)::int AS n FROM resource WHERE venue_id=$1 AND id = ANY($2)", [venueId, courtIds]);
@@ -83,29 +86,42 @@ export async function fill(formData: FormData) {
 
 export async function gameOver(formData: FormData) {
   const { user, s, path } = await staff(formData);
-  const w = str(formData, "winner", 1);
-  await guard(path, () => endGame(s.id, str(formData, "game_id", 60), w === "a" || w === "b" ? w : null, user.id));
+  const noResult = str(formData, "no_result") === "1";
+  const a = int(formData, "score_a", -1);
+  const b = int(formData, "score_b", -1);
+  if (!noResult && (a < 0 || b < 0)) to(path, { error: "Enter the final score for both teams." });
+  await guard(path, () => endGame(s.id, str(formData, "game_id", 60), noResult ? null : { a, b }, user.id));
   revalidatePath(path);
-  to(path, { ok: "Result saved. Next players are up." });
+  to(path, { ok: noResult ? "Game closed without a result. Next players are up." : `Final score ${a}-${b} saved. Next players are up.` });
 }
 
 export async function staffCheckIn(formData: FormData) {
   const { s, path } = await staff(formData);
   const paid = pesoToCents(formData, "paid");
-  await checkInPlayer(s.id, str(formData, "player_id", 60), Number.isFinite(paid) ? paid : 0);
+  await guard(path, () => checkInPlayer(s, str(formData, "player_id", 60), Number.isFinite(paid) ? paid : 0));
   revalidatePath(path);
   to(path, { ok: "Checked in and added to the queue." });
 }
 
 export async function staffWalkIn(formData: FormData) {
-  const { s, path } = await staff(formData);
+  const { s, venueId, path } = await staff(formData);
   const name = str(formData, "name", 60);
   const skill = str(formData, "skill", 15) as Skill;
   const paid = pesoToCents(formData, "paid");
   if (name.length < 2 || !SKILLS.includes(skill)) to(path, { error: "Enter a name and skill level." });
-  await addWalkIn(s.id, name, skill, Number.isFinite(paid) ? paid : 0);
+  const rentals = await readRentalLines(formData, venueId);
+  await guard(path, () => addWalkIn(s, name, skill, Number.isFinite(paid) ? paid : 0, rentals));
   revalidatePath(path);
   to(path, { ok: `${name} added to the queue.` });
+}
+
+export async function staffVoid(formData: FormData) {
+  const { user, s, path } = await staff(formData);
+  const reason = str(formData, "reason", 200);
+  if (reason.length < 4) to(path, { error: "Give a reason for the void (for example: refunded, added by mistake)." });
+  await guard(path, () => voidPlayer(s, str(formData, "player_id", 60), reason, user.id));
+  revalidatePath(path);
+  to(path, { ok: "Player voided. Return any payment they made." });
 }
 
 export async function staffPlayerStatus(formData: FormData) {
@@ -127,7 +143,9 @@ export async function joinOpenPlay(formData: FormData) {
   if (!s) redirect("/venues");
   const skill = str(formData, "skill", 15) as Skill;
   if (!SKILLS.includes(skill)) to(path, { error: "Choose your level." });
-  await guard(path, () => joinSession(s!, session!.user, skill));
+  if (!formData.get("consent")) to(path, { error: "Please tick the box to agree before joining." });
+  const rentals = await readRentalLines(formData, s!.venue_id);
+  await guard(path, () => joinSession(s!, session!.user, skill, rentals));
   to(path, { ok: "You're in! Show this screen at the front desk to check in." });
 }
 
@@ -153,19 +171,20 @@ export async function payOpenPlayFee(formData: FormData) {
   if (!auth) redirect(`/login?next=${encodeURIComponent(path)}`);
   const s = await sessionByCode(code);
   if (!s) redirect("/venues");
-  const me = await q1<{ id: string; name: string; paid_online: boolean; email: string }>(
-    `SELECT p.id, p.name, p.paid_online, u.email FROM open_play_player p JOIN "user" u ON u.id=p.user_id WHERE p.session_id=$1 AND p.user_id=$2 AND p.status <> 'left'`,
+  const me = await q1<{ id: string; name: string; paid_online: boolean; email: string; rental_cents: number; paid_cents: number }>(
+    `SELECT p.id, p.name, p.paid_online, p.rental_cents, p.paid_cents, u.email FROM open_play_player p JOIN "user" u ON u.id=p.user_id WHERE p.session_id=$1 AND p.user_id=$2 AND p.status <> 'left'`,
     [s!.id, auth!.user.id],
   );
   if (!me) to(path, { error: "Join the session first." });
-  if (me!.paid_online || s!.fee_cents <= 0) to(path, { error: "Nothing to pay." });
+  const due = s!.fee_cents + me!.rental_cents - me!.paid_cents;
+  if (me!.paid_online || due <= 0) to(path, { error: "Nothing to pay." });
   const v = await q1<{ name: string; secret: string | null }>("SELECT name, paymongo_secret_enc AS secret FROM venue WHERE id=$1", [s!.venue_id]);
   if (!v?.secret) to(path, { error: "This venue takes payment at the front desk." });
   const base = process.env.BETTER_AUTH_URL || "https://playbook.databridgesol.space";
   let url = "";
   try {
     const c = await createCheckout(decrypt(v!.secret!), {
-      amountCents: s!.fee_cents, name: `Open play · ${s!.title}`, description: `${v!.name} · ${s!.date}`, reference: `OP-${s!.code}`,
+      amountCents: due, name: `Open play · ${s!.title}`, description: `${v!.name} · ${s!.date}`, reference: `OP-${s!.code}`,
       successUrl: `${base}${path}?paid=1`, cancelUrl: `${base}${path}`, customer: { name: me!.name, email: me!.email },
       metadata: { open_play_player_id: me!.id, venue_id: s!.venue_id },
     });

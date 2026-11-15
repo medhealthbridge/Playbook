@@ -6,12 +6,14 @@ import { Flash, PortalHeader, VenueStatus, peso, when } from "@/components/porta
 import { SPORTS } from "@/content/sports";
 import { q, q1 } from "@/lib/server/db";
 import { requireVenueRole } from "@/lib/server/session";
-import { cancelSeries, createSeries, choosePlan, addBlock, addCourt, addMember, checkIn, connectPaymongo, disconnectPaymongo, markNoShow, removeBlock, removeMember, setPayAtVenue, updateCourt, updateVenue, walkIn } from "../actions";
+import { addRental, blockPlayer, cancelSeries, createSeries, setPlayerLevel, updateRental, addBlock, addCourt, addMember, checkIn, connectPaymongo, disconnectPaymongo, markNoShow, removeBlock, removeMember, setPayAtVenue, updateCourt, updateVenue, walkIn } from "../actions";
 import { addDays, formatDate, formatRange, formatTime, manilaToday } from "@/lib/booking/time";
-import { hmToMin } from "@/lib/booking/engine";
+import { hmToMin, weekRange, type CutRule } from "@/lib/booking/engine";
 import { blocksOn, expireHolds, venueBookingsOn, venueById as getVenue } from "@/lib/server/bookings";
-import { PLAN_IDS, feesFor, monthRange, planPrices, subscriptionFor } from "@/lib/server/billing";
-import { VENUE_PLANS } from "@/content/plans";
+import { billingSettings, cutSettings, usageFor, venuePaused } from "@/lib/server/billing";
+import { venueRentals } from "@/lib/server/rentals";
+import { LEVEL_LABEL } from "@/lib/openplay/rating";
+import { PaymentBell } from "@/components/portal/PaymentBell";
 import { venueSessions } from "@/lib/server/openplay";
 import { createOpenPlay } from "../../openplay/actions";
 import { deleteAnnouncement, postAnnouncement } from "../../messages/actions";
@@ -25,7 +27,8 @@ type Venue = {
 };
 type Court = { id: string; name: string; kind: string; sports: string[]; indoor: boolean; hourly_rate_cents: number; active: boolean };
 const sportName = (id: string) => SPORTS.find((s) => s.id === id)?.name ?? id;
-const PLAN: Record<string, string> = { trial: "Free trial", manage: "Manage", capture: "Capture", club: "Club" };
+const ROLE: Record<string, string> = { owner: "Owner", manager: "Manager", staff: "Facilitator" };
+const cutText = (r: CutRule) => (r.mode === "fixed" ? peso(r.value) : `${r.value}%${r.min_cents ? ` (at least ${peso(r.min_cents)})` : ""}`);
 
 export default async function VenueDashboard({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<Record<string, string | undefined>> }) {
   const { id } = await params;
@@ -36,17 +39,18 @@ export default async function VenueDashboard({ params, searchParams }: { params:
     [id],
   );
   if (!venue) notFound();
-  const tab = ["overview", "calendar", "recurring", "openplay", "announcements", "courts", "staff", "payments", "billing", "settings"].includes(sp.tab ?? "") ? sp.tab! : "overview";
+  const tab = ["overview", "calendar", "recurring", "openplay", "players", "announcements", "courts", "staff", "payments", "billing", "settings"].includes(sp.tab ?? "") ? sp.tab! : "overview";
   const canManage = role === "owner" || role === "manager";
   const tabs = [
     { key: "overview", label: "Overview", href: `/venue/${id}` },
     { key: "calendar", label: "Calendar", href: `/venue/${id}?tab=calendar` },
     { key: "recurring", label: "Recurring", href: `/venue/${id}?tab=recurring` },
     { key: "openplay", label: "Open play", href: `/venue/${id}?tab=openplay` },
+    { key: "players", label: "Players", href: `/venue/${id}?tab=players` },
     ...(canManage ? [{ key: "announcements", label: "News", href: `/venue/${id}?tab=announcements` }] : []),
     { key: "courts", label: "Courts", href: `/venue/${id}?tab=courts` },
     ...(canManage ? [{ key: "staff", label: "Staff", href: `/venue/${id}?tab=staff` }] : []),
-    ...(role === "owner" ? [{ key: "payments", label: "Payments", href: `/venue/${id}?tab=payments` }, { key: "billing", label: "Billing", href: `/venue/${id}?tab=billing` }] : []),
+    ...(role === "owner" ? [{ key: "payments", label: "Payments", href: `/venue/${id}?tab=payments` }, { key: "billing", label: "Statements", href: `/venue/${id}?tab=billing` }] : []),
     ...(canManage ? [{ key: "settings", label: "Settings", href: `/venue/${id}?tab=settings` }] : []),
   ];
 
@@ -62,12 +66,14 @@ export default async function VenueDashboard({ params, searchParams }: { params:
       <div className="app-body">
         <div className="container app-stack">
           <Flash ok={sp.ok} error={sp.error} />
+          <PaymentBell venueId={id} />
           {tab === "overview" && <Overview venue={venue} />}
           {tab === "calendar" && <Calendar venueId={id} date={/^\d{4}-\d{2}-\d{2}$/.test(sp.date ?? "") ? sp.date! : manilaToday()} canManage={canManage} />}
           {tab === "recurring" && <RecurringTab venueId={id} canManage={canManage} />}
           {tab === "openplay" && <OpenPlayTab venueId={id} canManage={canManage} />}
+          {tab === "players" && <PlayersTab venueId={id} isOwner={role === "owner"} />}
           {tab === "announcements" && canManage && <Announcements venueId={id} />}
-          {tab === "courts" && <Courts venueId={id} canManage={canManage} />}
+          {tab === "courts" && <><Courts venueId={id} canManage={canManage} /><Rentals venueId={id} canManage={canManage} /></>}
           {tab === "payments" && role === "owner" && <Payments venueId={id} />}
           {tab === "billing" && role === "owner" && <BillingTab venue={venue} />}
           {tab === "staff" && canManage && <Staff venueId={id} isOwner={role === "owner"} />}
@@ -83,16 +89,14 @@ async function Overview({ venue }: { venue: Venue }) {
     `SELECT (SELECT count(*)::int FROM resource WHERE venue_id=$1 AND active) AS courts,
             (SELECT count(*)::int FROM booking WHERE venue_id=$1 AND date=(now() AT TIME ZONE 'Asia/Manila')::date AND status IN ('held','confirmed')) AS today,
             (SELECT count(*)::int FROM booking WHERE venue_id=$1 AND date>(now() AT TIME ZONE 'Asia/Manila')::date AND status IN ('held','confirmed')) AS upcoming,
-            (SELECT coalesce(sum(platform_fee_cents),0)::int FROM booking WHERE venue_id=$1 AND status IN ('confirmed','completed') AND date_trunc('month',created_at)=date_trunc('month',now())) AS fees`,
+            0 AS fees`,
     [venue.id],
   );
+  const wk = weekRange(manilaToday());
+  const [usage, paused] = await Promise.all([usageFor(venue.id, wk.start, wk.end), venuePaused(venue.id)]);
   return (
     <>
-      {venue.status === "active" && venue.plan === "trial" && venue.trial_ends_at && (
-        <div className={`alert ${new Date(venue.trial_ends_at) < new Date() ? "alert-error" : "alert-info"}`}>
-          {new Date(venue.trial_ends_at) < new Date() ? "Your free trial has ended." : `Free trial until ${when(venue.trial_ends_at)}.`} <Link href={`/venue/${venue.id}?tab=billing`}>Choose a plan</Link> to keep taking bookings.
-        </div>
-      )}
+      {paused && <div className="alert alert-error">New bookings and check-ins are paused because a Playbook statement is past due. <Link href={`/venue/${venue.id}?tab=billing`}>Open Statements</Link> to pay it.</div>}
       {venue.status === "pending" && <div className="alert alert-info">Your venue is under review. We check the business details and courts, then email you when it&apos;s live. Players can&apos;t see it yet.</div>}
       {venue.status === "rejected" && <div className="alert alert-error">Not approved{venue.status_reason ? `: ${venue.status_reason}` : "."} Update your details and contact support to request another review.</div>}
       {venue.status === "suspended" && <div className="alert alert-error">Suspended{venue.status_reason ? `: ${venue.status_reason}` : "."} New bookings are paused. Contact support.</div>}
@@ -100,7 +104,7 @@ async function Overview({ venue }: { venue: Venue }) {
         <div className="stat"><b>{stats.courts}</b><span>Active courts</span></div>
         <div className="stat"><b>{stats.today}</b><span>Bookings today</span></div>
         <div className="stat"><b>{stats.upcoming}</b><span>Upcoming bookings</span></div>
-        <div className="stat"><b>{peso(stats.fees)}</b><span>Platform fees this month</span></div>
+        <div className="stat"><b>{peso(usage.total)}</b><span>Playbook cut this week so far</span></div>
       </div>
       <div className="app-grid">
         <section className="app-card">
@@ -113,10 +117,9 @@ async function Overview({ venue }: { venue: Venue }) {
           </ul>
         </section>
         <aside className="app-card">
-          <h3>Plan</h3>
+          <h3>Listing</h3>
           <dl className="kv">
-            <dt>Plan</dt><dd>{PLAN[venue.plan] ?? venue.plan}</dd>
-            {venue.trial_ends_at && (<><dt>Trial ends</dt><dd>{when(venue.trial_ends_at)}</dd></>)}
+            <dt>Cost</dt><dd>Free. Playbook keeps a cut per player or booking.</dd>
             <dt>Listed</dt><dd>{when(venue.created_at)}</dd>
           </dl>
         </aside>
@@ -179,14 +182,14 @@ async function Staff({ venueId, isOwner }: { venueId: string; isOwner: boolean }
   return (
     <section className="app-card">
       <h2>Staff access</h2>
-      <p className="hint">Managers can edit courts, staff and settings. Front-desk staff can view the venue and, once bookings launch, check players in. Only the owner sees billing.</p>
+      <p className="hint">Facilitators run the day: calendar, check-ins, walk-ins, open-play matches and scores. Only the owner sees payments and statements.</p>
       <div className="table-wrap">
         <table className="data-table">
           <thead><tr><th scope="col">Name</th><th scope="col">Email</th><th scope="col">Role</th>{isOwner && <th scope="col" />}</tr></thead>
           <tbody>
             {members.map((m) => (
               <tr key={m.user_id}>
-                <td>{m.name}</td><td>{m.email}</td><td>{m.role}</td>
+                <td>{m.name}</td><td>{m.email}</td><td>{ROLE[m.role] ?? m.role}</td>
                 {isOwner && (
                   <td>
                     {m.role !== "owner" && (
@@ -204,16 +207,13 @@ async function Staff({ venueId, isOwner }: { venueId: string; isOwner: boolean }
         </table>
       </div>
       <form action={addMember} className="form-section">
-        <h3>Add someone</h3>
+        <h3>Add a facilitator</h3>
         <p className="hint">They need a Playbook account first.</p>
         <input type="hidden" name="venue_id" value={venueId} />
         <div className="inline-form">
           <input className="input" name="email" type="email" placeholder="Their email" required aria-label="Email" />
-          <select className="select" name="role" defaultValue="staff" aria-label="Role">
-            <option value="staff">Front-desk staff</option>
-            {isOwner && <option value="manager">Manager</option>}
-          </select>
-          <button className="btn btn-sm" type="submit">Add</button>
+          <input type="hidden" name="role" value="staff" />
+          <button className="btn btn-sm" type="submit">Add facilitator</button>
         </div>
       </form>
     </section>
@@ -442,50 +442,39 @@ async function Payments({ venueId }: { venueId: string }) {
 }
 
 async function BillingTab({ venue }: { venue: Venue }) {
-  const today = manilaToday();
-  const { start, end } = monthRange(today.slice(0, 7));
-  const [prices, usage, invoices] = await Promise.all([
-    planPrices(),
-    feesFor(venue.id, start, end),
+  const wk = weekRange(manilaToday());
+  const [cut, billing, usage, paused, invoices] = await Promise.all([
+    cutSettings(), billingSettings(), usageFor(venue.id, wk.start, wk.end), venuePaused(venue.id),
     q<{ id: string; number: string; period: string; total_cents: number; status: string; due_date: string; overdue: boolean }>(
-      `SELECT id, number, to_char(period_start,'Mon YYYY') AS period, total_cents, status, to_char(due_date,'Mon DD, YYYY') AS due_date,
+      `SELECT id, number, to_char(period_start,'Mon DD') || ' – ' || to_char(period_end,'Mon DD, YYYY') AS period, total_cents, status, to_char(due_date,'Mon DD, YYYY') AS due_date,
               (status='open' AND due_date < (now() AT TIME ZONE 'Asia/Manila')::date) AS overdue
-         FROM invoice WHERE venue_id=$1 ORDER BY period_start DESC`,
+         FROM invoice WHERE venue_id=$1 ORDER BY period_start DESC LIMIT 60`,
       [venue.id],
     ),
   ]);
-  const sub = subscriptionFor(venue.plan, venue.trial_ends_at, end, prices);
-  const onTrial = venue.plan === "trial" || (venue.trial_ends_at && new Date(venue.trial_ends_at) > new Date());
   return (
     <>
+      {paused && <div className="alert alert-error">A statement is past due, so new bookings and check-ins are paused. Pay it below and they resume as soon as it is marked paid.</div>}
       <div className="stat-row">
-        <div className="stat"><b>{venue.plan === "trial" ? "Trial" : PLAN[venue.plan]}</b><span>{onTrial && venue.trial_ends_at ? `Free until ${when(venue.trial_ends_at)}` : "Current plan"}</span></div>
-        <div className="stat"><b>{usage.n}</b><span>Playbook bookings this month</span></div>
-        <div className="stat"><b>{peso(usage.fees + sub)}</b><span>This month so far ({peso(sub)} plan + {peso(usage.fees)} booking fees)</span></div>
+        <div className="stat"><b>{usage.playCount}</b><span>Open-play players this week ({peso(usage.playFees)} cut)</span></div>
+        <div className="stat"><b>{usage.courtCount}</b><span>Court bookings this week ({peso(usage.courtFees)} cut)</span></div>
+        <div className="stat"><b>{peso(usage.total)}</b><span>Owed to Playbook this week so far</span></div>
       </div>
       <section className="app-card">
-        <h2>Plan</h2>
-        <p className="hint">You&apos;re billed monthly, after the month ends: your plan price plus a small fee on each booking players make through Playbook. Walk-ins you add yourself are free.</p>
-        <div className="plan-pick">
-          {VENUE_PLANS.map((p) => (
-            <form key={p.id} action={choosePlan} className={`plan-opt ${venue.plan === p.id ? "is-current" : ""}`}>
-              <input type="hidden" name="venue_id" value={venue.id} />
-              <input type="hidden" name="plan" value={p.id} />
-              <h3>{p.name}</h3>
-              <p className="price">{prices[p.id as (typeof PLAN_IDS)[number]] > 0 ? `${peso(prices[p.id as (typeof PLAN_IDS)[number]])}/month` : "Price to be announced"}</p>
-              <p className="hint">{p.summary}</p>
-              <ul className="plain-list">{p.benefits.map((b) => <li key={b}>✓ {b}</li>)}</ul>
-              {venue.plan === p.id ? <span className="badge badge-ok">Current plan</span> : <button className="btn btn-sm" type="submit">Choose {p.name}</button>}
-            </form>
-          ))}
-        </div>
+        <h2>How it works</h2>
+        <ul className="plain-list">
+          <li>• Listing on Playbook is free. There is no subscription.</li>
+          <li>• Players pay you directly, by cash or online.</li>
+          <li>• Playbook&apos;s cut: <strong>{cutText(cut.open_play)}</strong> per open-play player checked in, and <strong>{cutText(cut.court)}</strong> per court booking{cut.staff_bookings ? ", including walk-ins and recurring bookings you add" : " made online"}. No cut on rentals.</li>
+          <li>• Every Monday you get a statement for the week before. You have <strong>{billing.due_days} days</strong> to pay it.{billing.auto_pause ? " After that, new bookings and check-ins pause until it is paid." : ""}</li>
+        </ul>
       </section>
       <section className="app-card">
-        <h2>Invoices</h2>
-        {invoices.length === 0 ? <p className="hint">No invoices yet.</p> : (
+        <h2>Statements</h2>
+        {invoices.length === 0 ? <p className="hint">No statements yet. The first one arrives the Monday after your first paid week.</p> : (
           <div className="table-wrap">
             <table className="data-table">
-              <thead><tr><th scope="col">Invoice</th><th scope="col">Period</th><th scope="col">Total</th><th scope="col">Status</th></tr></thead>
+              <thead><tr><th scope="col">Statement</th><th scope="col">Week</th><th scope="col">Total</th><th scope="col">Status</th></tr></thead>
               <tbody>
                 {invoices.map((i) => (
                   <tr key={i.id}>
@@ -501,6 +490,107 @@ async function BillingTab({ venue }: { venue: Venue }) {
         )}
       </section>
     </>
+  );
+}
+
+async function PlayersTab({ venueId, isOwner }: { venueId: string; isOwner: boolean }) {
+  const players = await q<{ id: string; name: string; email: string; bookings: number; sessions: number; last_seen: string | null; blocked: string | null; skills: { sport: string; level: "beginner" | "intermediate" | "advanced"; games: number; wins: number; losses: number }[] | null }>(
+    `SELECT u.id, u.name, u.email,
+            (SELECT count(*)::int FROM booking b WHERE b.venue_id=$1 AND b.user_id=u.id AND b.status IN ('confirmed','completed','no_show')) AS bookings,
+            (SELECT count(*)::int FROM open_play_player p JOIN open_play_session s ON s.id=p.session_id WHERE s.venue_id=$1 AND p.user_id=u.id AND p.checked_in_at IS NOT NULL) AS sessions,
+            to_char(greatest((SELECT max(b.date) FROM booking b WHERE b.venue_id=$1 AND b.user_id=u.id), (SELECT max(s.date) FROM open_play_player p JOIN open_play_session s ON s.id=p.session_id WHERE s.venue_id=$1 AND p.user_id=u.id)),'Mon DD, YYYY') AS last_seen,
+            (SELECT reason FROM venue_player_block k WHERE k.venue_id=$1 AND k.user_id=u.id) AS blocked,
+            (SELECT json_agg(json_build_object('sport', k.sport, 'level', k.level, 'games', k.games, 'wins', k.wins, 'losses', k.losses)) FROM player_skill k WHERE k.user_id=u.id) AS skills
+       FROM "user" u
+      WHERE u.id IN (SELECT user_id FROM booking WHERE venue_id=$1 AND user_id IS NOT NULL
+                     UNION SELECT p.user_id FROM open_play_player p JOIN open_play_session s ON s.id=p.session_id WHERE s.venue_id=$1 AND p.user_id IS NOT NULL)
+      ORDER BY u.name LIMIT 300`,
+    [venueId],
+  );
+  return (
+    <section className="app-card">
+      <h2>Players</h2>
+      <p className="hint">Everyone with an account who has booked or joined open play here. Levels move on their own with game results; set one here if a player is clearly in the wrong group.{isOwner ? " Blocking stops a player from booking or joining at this venue only." : ""}</p>
+      {players.length === 0 ? <p className="hint">No players yet.</p> : (
+        <div className="table-wrap">
+          <table className="data-table">
+            <thead><tr><th scope="col">Player</th><th scope="col">Levels and record</th><th scope="col">Visits</th><th scope="col">Set level</th>{isOwner && <th scope="col">Access</th>}</tr></thead>
+            <tbody>
+              {players.map((p) => (
+                <tr key={p.id}>
+                  <td><strong>{p.name}</strong>{p.blocked && <> <span className="badge badge-bad">Blocked</span></>}<br /><span className="hint">{p.email}</span></td>
+                  <td>{(p.skills ?? []).length === 0 ? <span className="hint">No level yet</span> : (p.skills ?? []).map((k) => <div key={k.sport}>{sportName(k.sport)}: <strong>{LEVEL_LABEL[k.level]}</strong> <span className="hint">{k.wins}W–{k.losses}L</span></div>)}</td>
+                  <td>{p.sessions} open play · {p.bookings} bookings<br /><span className="hint">{p.last_seen ? `Last: ${p.last_seen}` : ""}</span></td>
+                  <td>
+                    <form action={setPlayerLevel} className="inline-form">
+                      <input type="hidden" name="venue_id" value={venueId} /><input type="hidden" name="user_id" value={p.id} />
+                      <select className="select" name="sport" defaultValue="pickleball" aria-label={`Sport for ${p.name}`}>{SPORTS.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select>
+                      <select className="select" name="level" defaultValue="intermediate" aria-label={`Level for ${p.name}`}><option value="beginner">Beginner</option><option value="intermediate">Intermediate</option><option value="advanced">Expert</option></select>
+                      <button className="btn btn-xs" type="submit">Set</button>
+                    </form>
+                  </td>
+                  {isOwner && (
+                    <td>
+                      <form action={blockPlayer} className="inline-form">
+                        <input type="hidden" name="venue_id" value={venueId} /><input type="hidden" name="user_id" value={p.id} />
+                        <input type="hidden" name="action" value={p.blocked ? "unblock" : "block"} />
+                        {!p.blocked && <input className="input" name="reason" placeholder="Reason" aria-label={`Reason to block ${p.name}`} required minLength={4} />}
+                        <button className={`btn btn-xs ${p.blocked ? "" : "btn-danger"}`} type="submit">{p.blocked ? "Unblock" : "Block"}</button>
+                      </form>
+                    </td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+}
+
+async function Rentals({ venueId, canManage }: { venueId: string; canManage: boolean }) {
+  const items = await venueRentals(venueId, false);
+  return (
+    <section className="app-card">
+      <h2>Rentals</h2>
+      <p className="hint">Balls, paddles, rackets and anything else players can add when they book or join open play. Rental money is all yours: Playbook takes no cut on it.</p>
+      {items.length === 0 ? <p className="hint">No rental items yet.</p> : (
+        <div className="table-wrap">
+          <table className="data-table">
+            <thead><tr><th scope="col">Item</th><th scope="col">Price</th>{canManage && <th scope="col">Edit</th>}</tr></thead>
+            <tbody>
+              {items.map((it) => (
+                <tr key={it.id}>
+                  <td>{it.name}{!it.active && <> <span className="badge badge-muted">Hidden</span></>}</td><td>{peso(it.price_cents)}</td>
+                  {canManage && (
+                    <td>
+                      <form action={updateRental} className="inline-form">
+                        <input type="hidden" name="venue_id" value={venueId} /><input type="hidden" name="id" value={it.id} />
+                        <input className="input" name="price" defaultValue={it.price_cents / 100} inputMode="decimal" aria-label={`${it.name} price`} />
+                        <select className="select" name="active" defaultValue={it.active ? "1" : "0"} aria-label={`${it.name} status`}><option value="1">Offered</option><option value="0">Hidden</option></select>
+                        <button className="btn btn-xs" type="submit">Save</button>
+                      </form>
+                    </td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {canManage && (
+        <form action={addRental} className="form-section">
+          <h3>Add a rental item</h3>
+          <input type="hidden" name="venue_id" value={venueId} />
+          <div className="inline-form">
+            <input className="input" name="name" placeholder="e.g. Paddle" required maxLength={60} aria-label="Rental item name" />
+            <input className="input" name="price" placeholder="₱ each" inputMode="decimal" required aria-label="Rental price in pesos" />
+            <button className="btn btn-sm" type="submit">Add</button>
+          </div>
+        </form>
+      )}
+    </section>
   );
 }
 
@@ -560,7 +650,7 @@ async function OpenPlayTab({ venueId, canManage }: { venueId: string; canManage:
               </select>
             </div>
           </div>
-          <label className="check"><input type="checkbox" name="skill_match" value="1" /> Match players by skill level when possible</label>
+          <label className="check"><input type="checkbox" name="skill_match" value="1" defaultChecked /> Match players by level (beginner, intermediate, expert) when possible</label>
           <button className="btn" type="submit">Create session</button>
         </form>
       )}

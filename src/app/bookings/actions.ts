@@ -5,7 +5,9 @@ import {
   BookingError, bookingById, cancelBookingRow, confirmBooking, createHold, venueById, venueBySlug, venueResources,
 } from "@/lib/server/bookings";
 import { decrypt } from "@/lib/server/crypto";
-import { q, q1 } from "@/lib/server/db";
+import { audit, q, q1, tx } from "@/lib/server/db";
+import { depositCents } from "@/lib/booking/engine";
+import { readRentalLines, rentalTotal, replaceRentalLines } from "@/lib/server/rentals";
 import { int, str } from "@/lib/server/form";
 import { emailBookingCancelled, emailBookingConfirmed } from "@/lib/server/notify";
 import { createCheckout, refund } from "@/lib/server/paymongo";
@@ -128,4 +130,24 @@ export async function cancelBooking(formData: FormData) {
   const back = str(formData, "back", 200);
   const msg = `Cancelled.${refundCents > 0 ? ` Refund: ₱${(refundCents / 100).toLocaleString("en-PH")}.` : ""}`;
   redirect(`${back.startsWith("/venue/") ? back : `/bookings/${id}`}${back.includes("?") ? "&" : "?"}ok=${encodeURIComponent(msg)}`);
+}
+
+/** Step before paying: how many people are coming, and any rentals. Prices come from the venue's own rental list. */
+export async function updateBookingExtras(formData: FormData) {
+  const { b, v, user } = await loadForPlayer(formData);
+  const path = `/bookings/${b.id}`;
+  if (b.status !== "held") err(path, "Extras can only be changed before the booking is confirmed.");
+  const party = int(formData, "party_size", 0);
+  if (party < 1 || party > 60) err(path, "Enter how many people are playing (1 to 60).");
+  const lines = await readRentalLines(formData, v.id);
+  const rental = rentalTotal(lines);
+  const court = b.price_cents - b.rental_cents;
+  await tx(async (run) => {
+    await replaceRentalLines(run, v.id, { bookingId: b.id }, lines);
+    await run("UPDATE booking SET party_size=$2, rental_cents=$3, price_cents=$4, deposit_cents=$5, updated_at=now() WHERE id=$1 AND status='held'",
+      [b.id, party, rental, court + rental, depositCents(court + rental, v.deposit_percent)]);
+  });
+  await audit(user.id, "booking.extras", "booking", b.id, { party, rental });
+  revalidatePath(path);
+  redirect(`${path}?ok=${encodeURIComponent("Saved. Now confirm your booking below.")}`);
 }

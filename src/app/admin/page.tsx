@@ -6,13 +6,14 @@ import { q, q1 } from "@/lib/server/db";
 import { emailConfigured } from "@/lib/server/email";
 import { requireAdmin } from "@/lib/server/session";
 import { connectPlatformPaymongo, runInvoices, saveBilling, saveSettings, setInvoiceStatus, setUserBan, setUserRole, setVenueStatus } from "./actions";
-import { PLAN_IDS, billingSettings, planPrices, platformPaymongo } from "@/lib/server/billing";
+import { billingSettings, cutSettings, platformPaymongo } from "@/lib/server/billing";
 import { addDays, manilaToday } from "@/lib/booking/time";
+import { weekRange, type CutRule } from "@/lib/booking/engine";
 
 export const metadata: Metadata = { title: "Platform admin — Playbook", robots: { index: false } };
 export const dynamic = "force-dynamic";
 
-const TABS = ["overview", "venues", "billing", "users", "audit", "settings"] as const;
+const TABS = ["overview", "venues", "transactions", "billing", "users", "audit", "settings"] as const;
 
 export default async function AdminPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const sp = await searchParams;
@@ -32,7 +33,8 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
           <Flash ok={sp.ok} error={sp.error} />
           {tab === "overview" && <Overview />}
           {tab === "venues" && <Venues filter={sp.status} />}
-          {tab === "billing" && <Billing month={sp.month} status={sp.status} />}
+          {tab === "transactions" && <Transactions show={sp.show} />}
+          {tab === "billing" && <Billing status={sp.status} />}
           {tab === "users" && <Users meId={admin.id} search={sp.q} />}
           {tab === "audit" && <Audit />}
           {tab === "settings" && <><Settings /><BillingSettings /></>}
@@ -43,34 +45,116 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
 }
 
 async function Overview() {
+  const wk = weekRange(manilaToday());
   const s = (await q1<Record<string, number>>(
     `SELECT (SELECT count(*)::int FROM venue WHERE status='pending') AS pending,
             (SELECT count(*)::int FROM venue WHERE status='active') AS active,
-            (SELECT count(*)::int FROM venue WHERE status IN ('suspended','rejected')) AS inactive,
             (SELECT count(*)::int FROM "user") AS users,
             (SELECT count(*)::int FROM "user" WHERE "createdAt" > now() - interval '7 days') AS new_users,
-            (SELECT count(*)::int FROM booking WHERE status IN ('confirmed','completed')) AS bookings,
-            (SELECT coalesce(sum(platform_fee_cents),0)::int FROM booking WHERE status IN ('confirmed','completed') AND date_trunc('month',created_at)=date_trunc('month',now())) AS fees_month,
-            (SELECT count(*)::int FROM venue WHERE plan='trial' AND trial_ends_at BETWEEN now() AND now() + interval '7 days') AS trials_ending,
-            (SELECT count(*)::int FROM venue WHERE status='active' AND plan='trial' AND trial_ends_at < now()) AS trials_over,
+            (SELECT coalesce(sum(platform_fee_cents),0)::int FROM booking WHERE status IN ('confirmed','completed','no_show') AND date BETWEEN $1 AND $2) AS court_cut,
+            (SELECT coalesce(sum(platform_fee_cents),0)::int FROM open_play_player WHERE (checked_in_at AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2) AS play_cut,
+            (SELECT count(*)::int FROM open_play_player WHERE platform_fee_cents > 0 AND (checked_in_at AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2) AS players,
+            (SELECT count(*)::int FROM open_play_player WHERE voided_at > now() - interval '7 days') AS voids,
             (SELECT coalesce(sum(total_cents),0)::int FROM invoice WHERE status='open') AS open_cents,
-            (SELECT count(*)::int FROM invoice WHERE status='open' AND due_date < (now() AT TIME ZONE 'Asia/Manila')::date) AS overdue`,
+            (SELECT count(DISTINCT venue_id)::int FROM invoice WHERE status='open' AND due_date < (now() AT TIME ZONE 'Asia/Manila')::date) AS overdue_venues`,
+    [wk.start, wk.end],
   ))!;
   return (
     <>
       <div className="stat-row">
         <Link href="/admin?tab=venues&status=pending" className="stat"><b>{s.pending}</b><span>Venues awaiting review</span></Link>
         <div className="stat"><b>{s.active}</b><span>Live venues</span></div>
-        <div className="stat"><b>{s.trials_ending}</b><span>Trials ending in 7 days</span></div>
         <div className="stat"><b>{s.users}</b><span>Accounts ({s.new_users} new this week)</span></div>
-        <div className="stat"><b>{s.bookings}</b><span>Confirmed bookings</span></div>
-        <div className="stat"><b>{peso(s.fees_month)}</b><span>Booking fees this month</span></div>
-        <Link href="/admin?tab=billing&status=open" className="stat"><b>{peso(s.open_cents)}</b><span>Unpaid invoices ({s.overdue} overdue)</span></Link>
-        <div className="stat"><b>{s.trials_over}</b><span>Trials ended without a plan</span></div>
+        <Link href="/admin?tab=transactions" className="stat"><b>{peso(s.court_cut + s.play_cut)}</b><span>Your cut this week so far ({s.players} open-play players)</span></Link>
+        <Link href="/admin?tab=billing&status=open" className="stat"><b>{peso(s.open_cents)}</b><span>Owed to you on unpaid statements</span></Link>
+        <Link href="/admin?tab=billing&status=open" className="stat"><b>{s.overdue_venues}</b><span>Venues overdue</span></Link>
+        <Link href="/admin?tab=transactions&show=voids" className="stat"><b>{s.voids}</b><span>Voided check-ins, last 7 days</span></Link>
       </div>
       {!emailConfigured() && (
         <div className="alert alert-warn">Email isn&apos;t configured yet, so confirmation and reset emails are only logged and sign-ups aren&apos;t required to confirm their email. Add a Resend API key to turn on real emails.</div>
       )}
+    </>
+  );
+}
+
+type Txn = { at: string; venue: string; kind: string; who: string; amount: number; method: string | null; cut: number; status: string; note: string | null };
+
+/** Every payment players made to venues, with Playbook's cut on each. Read-only. */
+async function Transactions({ show }: { show?: string }) {
+  const voids = show === "voids";
+  const rows = await q<Txn>(
+    `SELECT * FROM (
+       SELECT coalesce(b.confirmed_at, b.created_at) AS ts, to_char(coalesce(b.confirmed_at, b.created_at) AT TIME ZONE 'Asia/Manila','Mon DD, HH12:MI AM') AS at, v.name AS venue,
+              'Court booking' AS kind, b.customer_name || ' · ' || b.ref AS who, b.price_cents AS amount, b.pay_method AS method, b.platform_fee_cents AS cut, b.status, b.cancel_reason AS note
+         FROM booking b JOIN venue v ON v.id=b.venue_id WHERE b.status <> 'held' AND NOT $1
+       UNION ALL
+       SELECT coalesce(p.voided_at, p.checked_in_at, p.paid_at) AS ts, to_char(coalesce(p.voided_at, p.checked_in_at, p.paid_at) AT TIME ZONE 'Asia/Manila','Mon DD, HH12:MI AM') AS at, v.name AS venue,
+              'Open play' AS kind, p.name || ' · ' || s.title AS who, p.paid_cents AS amount, p.pay_method AS method, p.platform_fee_cents AS cut,
+              CASE WHEN p.voided_at IS NOT NULL THEN 'voided' WHEN p.checked_in_at IS NOT NULL THEN 'checked in' ELSE 'paid, not checked in' END AS status, p.void_reason AS note
+         FROM open_play_player p JOIN open_play_session s ON s.id=p.session_id JOIN venue v ON v.id=s.venue_id
+        WHERE (p.checked_in_at IS NOT NULL OR p.paid_at IS NOT NULL OR p.voided_at IS NOT NULL) AND (NOT $1 OR p.voided_at IS NOT NULL)
+     ) t ORDER BY ts DESC NULLS LAST LIMIT 300`,
+    [voids],
+  );
+  const perVenue = await q<{ id: string; name: string; week_cut: number; open_cents: number; overdue: boolean; voids: number; walkins: number; checkins: number }>(
+    `SELECT v.id, v.name,
+            (SELECT coalesce(sum(platform_fee_cents),0)::int FROM booking b WHERE b.venue_id=v.id AND b.status IN ('confirmed','completed','no_show') AND b.date >= date_trunc('week', (now() AT TIME ZONE 'Asia/Manila'))::date)
+          + (SELECT coalesce(sum(p.platform_fee_cents),0)::int FROM open_play_player p JOIN open_play_session s ON s.id=p.session_id WHERE s.venue_id=v.id AND p.checked_in_at >= date_trunc('week', (now() AT TIME ZONE 'Asia/Manila')) AT TIME ZONE 'Asia/Manila') AS week_cut,
+            (SELECT coalesce(sum(total_cents),0)::int FROM invoice i WHERE i.venue_id=v.id AND i.status='open') AS open_cents,
+            EXISTS (SELECT 1 FROM invoice i WHERE i.venue_id=v.id AND i.status='open' AND i.due_date < (now() AT TIME ZONE 'Asia/Manila')::date) AS overdue,
+            (SELECT count(*)::int FROM open_play_player p JOIN open_play_session s ON s.id=p.session_id WHERE s.venue_id=v.id AND p.voided_at > now() - interval '30 days') AS voids,
+            (SELECT count(*)::int FROM open_play_player p JOIN open_play_session s ON s.id=p.session_id WHERE s.venue_id=v.id AND p.user_id IS NULL AND p.checked_in_at > now() - interval '30 days') AS walkins,
+            (SELECT count(*)::int FROM open_play_player p JOIN open_play_session s ON s.id=p.session_id WHERE s.venue_id=v.id AND p.checked_in_at > now() - interval '30 days') AS checkins
+       FROM venue v WHERE v.status IN ('active','suspended') ORDER BY v.name LIMIT 200`,
+  );
+  return (
+    <>
+      <section className="app-card">
+        <h2>What each venue owes you</h2>
+        <p className="hint">Players pay venues directly. Your cut is counted when a player is checked in or a court is confirmed, whether they paid by cash or online, and billed on the weekly statement.</p>
+        {perVenue.length === 0 ? <p className="hint">No live venues yet.</p> : (
+          <div className="table-wrap">
+            <table className="data-table">
+              <thead><tr><th scope="col">Venue</th><th scope="col">Cut this week (not yet billed)</th><th scope="col">Unpaid statements</th><th scope="col">Last 30 days</th></tr></thead>
+              <tbody>
+                {perVenue.map((v) => (
+                  <tr key={v.id}>
+                    <td><Link href={`/venue/${v.id}`}><strong>{v.name}</strong></Link></td>
+                    <td>{peso(v.week_cut)}</td>
+                    <td><strong>{peso(v.open_cents)}</strong> {v.overdue && <span className="badge badge-bad">Overdue · paused</span>}</td>
+                    <td>{v.checkins} check-ins · {v.walkins} walk-ins · {v.voids} voids {v.checkins >= 10 && v.voids / v.checkins > 0.1 && <span className="badge badge-warn">Many voids</span>}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+      <section className="app-card">
+        <div className="inline-form">
+          <h2 style={{ marginRight: "auto" }}>{voids ? "Voided check-ins" : "Transactions"}</h2>
+          <Link className={`btn btn-xs ${voids ? "btn-outline" : ""}`} href="/admin?tab=transactions">All</Link>
+          <Link className={`btn btn-xs ${voids ? "" : "btn-outline"}`} href="/admin?tab=transactions&show=voids">Voids only</Link>
+        </div>
+        {rows.length === 0 ? <p className="hint">Nothing yet.</p> : (
+          <div className="table-wrap">
+            <table className="data-table">
+              <thead><tr><th scope="col">When</th><th scope="col">Venue</th><th scope="col">Type</th><th scope="col">Player</th><th scope="col">Paid to venue</th><th scope="col">How</th><th scope="col">Your cut</th><th scope="col">Status</th></tr></thead>
+              <tbody>
+                {rows.map((t, i) => (
+                  <tr key={i}>
+                    <td>{t.at}</td><td>{t.venue}</td><td>{t.kind}</td><td>{t.who}</td><td>{peso(t.amount)}</td>
+                    <td>{t.method === "online" ? "Online" : t.method === "cash" ? "Cash" : t.method === "at_venue" ? "At venue" : "—"}</td>
+                    <td><strong>{peso(t.cut)}</strong></td>
+                    <td><span className={`badge ${t.status === "voided" || t.status === "cancelled" ? "badge-bad" : "badge-ok"}`}>{t.status}</span>{t.note && <><br /><span className="hint">{t.note}</span></>}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <p className="hint">Showing the latest 300.</p>
+      </section>
     </>
   );
 }
@@ -219,88 +303,85 @@ async function Audit() {
   );
 }
 
+function RuleFields({ k, label, rule, hint }: { k: string; label: string; rule: CutRule; hint: string }) {
+  return (
+    <fieldset className="form-section">
+      <legend><h3>{label}</h3></legend>
+      <p className="hint">{hint}</p>
+      <div className="field-row">
+        <div className="field"><label htmlFor={`${k}_mode`}>How it is worked out</label>
+          <select id={`${k}_mode`} name={`${k}_mode`} className="select" defaultValue={rule.mode}>
+            <option value="fixed">Fixed amount in pesos</option>
+            <option value="percent">Percent of the price</option>
+          </select>
+        </div>
+        <div className="field"><label htmlFor={`${k}_value`}>Amount (₱) or percent (%)</label><input id={`${k}_value`} name={`${k}_value`} className="input" inputMode="decimal" defaultValue={rule.mode === "fixed" ? rule.value / 100 : rule.value} /></div>
+      </div>
+      <div className="field"><label htmlFor={`${k}_min`}>Minimum cut in pesos (percent only, 0 for none)</label><input id={`${k}_min`} name={`${k}_min`} className="input" inputMode="decimal" defaultValue={(rule.min_cents ?? 0) / 100} /></div>
+    </fieldset>
+  );
+}
+
 async function Settings() {
-  const rows = await q<{ key: string; value: unknown }>("SELECT key, value FROM platform_setting");
-  const get = (k: string) => rows.find((r) => r.key === k)?.value;
-  const fee = (get("booking_fee") as { percent: number; min_cents: number; max_cents: number }) ?? { percent: 3, min_cents: 1000, max_cents: 5000 };
-  const trial = Number(get("trial_days") ?? 30);
+  const cut = await cutSettings();
   return (
     <form action={saveSettings} className="app-card form-grid" style={{ maxWidth: 720 }}>
-      <h2>Platform settings</h2>
-      <fieldset className="form-section">
-        <legend><h3>Per-booking platform fee</h3></legend>
-        <p className="hint">Players pay venues directly. This fee is recorded on each confirmed booking and billed to the venue monthly with its subscription.</p>
-        <div className="field-row">
-          <div className="field"><label htmlFor="fee_percent">Percent of booking</label><input id="fee_percent" name="fee_percent" className="input" inputMode="decimal" defaultValue={fee.percent} /></div>
-          <div className="field"><label htmlFor="fee_min">Minimum (₱)</label><input id="fee_min" name="fee_min" className="input" inputMode="decimal" defaultValue={fee.min_cents / 100} /></div>
-        </div>
-        <div className="field"><label htmlFor="fee_max">Maximum (₱)</label><input id="fee_max" name="fee_max" className="input" inputMode="decimal" defaultValue={fee.max_cents / 100} /></div>
-      </fieldset>
-      <fieldset className="form-section">
-        <legend><h3>Venue trial</h3></legend>
-        <div className="field"><label htmlFor="trial_days">Free trial length (days), starts on approval</label><input id="trial_days" name="trial_days" type="number" min={0} max={180} className="input" defaultValue={trial} /></div>
-      </fieldset>
+      <h2>Your cut</h2>
+      <p className="hint">Listing is free for venues. You earn a cut on each open-play player and each court booking. Players pay the venue; the venue pays you on the weekly statement. Rentals carry no cut. Changes apply from the next check-in or booking.</p>
+      <RuleFields k="op" label="Open play, per player" rule={cut.open_play} hint="Counted when a player is checked in. Example: fee ₱150, fixed ₱30 → venue keeps ₱120." />
+      <RuleFields k="court" label="Court bookings, per booking" rule={cut.court} hint="Counted when a booking is confirmed, on the court price only." />
+      <label className="check"><input type="checkbox" name="staff_bookings" value="1" defaultChecked={cut.staff_bookings} /> <span>Also take the cut on walk-in, phone and recurring bookings the venue adds itself</span></label>
       <fieldset className="form-section">
         <legend><h3>Integrations</h3></legend>
         <dl className="kv">
           <dt>Email (Resend)</dt><dd>{emailConfigured() ? <span className="badge badge-ok">Connected</span> : <span className="badge badge-warn">Not configured</span>}</dd>
-          <dt>Invoice payments (PayMongo)</dt><dd>See &quot;Your PayMongo account&quot; below</dd>
+          <dt>Statement payments (PayMongo)</dt><dd>See &quot;Your PayMongo account&quot; below</dd>
         </dl>
       </fieldset>
-      <button className="btn" type="submit">Save settings</button>
+      <button className="btn" type="submit">Save cut</button>
     </form>
   );
 }
 
-async function Billing({ month, status }: { month?: string; status?: string }) {
+async function Billing({ status }: { status?: string }) {
   const today = manilaToday();
-  const lastMonth = addDays(`${today.slice(0, 7)}-01`, -1).slice(0, 7);
-  const m = /^\d{4}-\d{2}$/.test(month ?? "") ? month! : lastMonth;
+  const lastWeek = addDays(weekRange(today).start, -1);
   const st = ["open", "paid", "void"].includes(status ?? "") ? status! : null;
-  const [prices, invoices, mrr] = await Promise.all([
-    planPrices(),
-    q<{ id: string; number: string; venue: string; venue_id: string; period_start: string; subscription_cents: number; booking_count: number; booking_fee_cents: number; total_cents: number; status: string; due_date: string; paid_via: string | null; note: string | null }>(
-      `SELECT i.id, i.number, v.name AS venue, v.id AS venue_id, to_char(i.period_start,'Mon YYYY') AS period_start, i.subscription_cents, i.booking_count, i.booking_fee_cents, i.total_cents, i.status, to_char(i.due_date,'Mon DD') AS due_date, i.paid_via, i.note
-         FROM invoice i JOIN venue v ON v.id=i.venue_id WHERE ($1::text IS NULL OR i.status=$1) ORDER BY i.period_start DESC, v.name LIMIT 300`,
-      [st],
-    ),
-    q1<{ plans: Record<string, number> | null }>("SELECT json_object_agg(plan, n) AS plans FROM (SELECT plan, count(*)::int AS n FROM venue WHERE status='active' GROUP BY plan) t"),
-  ]);
-  const counts = mrr?.plans ?? {};
-  const monthly = PLAN_IDS.reduce((s, p) => s + (counts[p] ?? 0) * prices[p], 0);
+  const invoices = await q<{ id: string; number: string; venue: string; venue_id: string; period: string; booking_count: number; booking_fee_cents: number; open_play_count: number; open_play_fee_cents: number; total_cents: number; status: string; due_date: string; overdue: boolean; paid_via: string | null; note: string | null }>(
+    `SELECT i.id, i.number, v.name AS venue, v.id AS venue_id, to_char(i.period_start,'Mon DD') || ' – ' || to_char(i.period_end,'Mon DD') AS period, i.booking_count, i.booking_fee_cents, i.open_play_count, i.open_play_fee_cents,
+            i.total_cents, i.status, to_char(i.due_date,'Mon DD') AS due_date, (i.status='open' AND i.due_date < (now() AT TIME ZONE 'Asia/Manila')::date) AS overdue, i.paid_via, i.note
+       FROM invoice i JOIN venue v ON v.id=i.venue_id WHERE ($1::text IS NULL OR i.status=$1) ORDER BY i.period_start DESC, v.name LIMIT 300`,
+    [st],
+  );
   return (
     <>
-      <div className="stat-row">
-        <div className="stat"><b>{peso(monthly)}</b><span>Monthly subscriptions (live venues on paid plans)</span></div>
-        {(["trial", ...PLAN_IDS] as string[]).map((p) => <div key={p} className="stat"><b>{counts[p] ?? 0}</b><span>{p === "trial" ? "On free trial" : `${p[0].toUpperCase()}${p.slice(1)} · ${peso(prices[p as keyof typeof prices])}/mo`}</span></div>)}
-      </div>
       <form action={runInvoices} className="app-card inline-form">
-        <h2 style={{ marginRight: "auto" }}>Create invoices</h2>
-        <label className="hint" htmlFor="month">Month</label>
-        <input id="month" name="month" type="month" className="input" defaultValue={m} max={today.slice(0, 7)} />
-        <button className="btn btn-sm" type="submit">Create invoices</button>
-        <p className="hint" style={{ flexBasis: "100%" }}>This runs automatically on the 1st of every month for the previous month (owners are emailed). Use the button to run it now. Bills each live venue for that month: its plan price (none while on trial) plus Playbook booking fees. Venues with nothing to bill are skipped; running it again never duplicates.</p>
+        <h2 style={{ marginRight: "auto" }}>Create weekly statements</h2>
+        <label className="hint" htmlFor="date">Any day in the week</label>
+        <input id="date" name="date" type="date" className="input" defaultValue={lastWeek} max={today} />
+        <button className="btn btn-sm" type="submit">Create statements</button>
+        <p className="hint" style={{ flexBasis: "100%" }}>This runs automatically every Monday for the week before (Monday to Sunday), and owners are emailed. Each statement adds up your cut on that week&apos;s court bookings and open-play check-ins. Venues that owe nothing are skipped; running it again never duplicates.</p>
       </form>
       <section className="app-card">
         <div className="inline-form">
-          <h2 style={{ marginRight: "auto" }}>Invoices</h2>
+          <h2 style={{ marginRight: "auto" }}>Statements</h2>
           {["all", "open", "paid", "void"].map((f) => (
             <Link key={f} className={`btn btn-xs ${(st ?? "all") === f ? "" : "btn-outline"}`} href={f === "all" ? "/admin?tab=billing" : `/admin?tab=billing&status=${f}`}>{f}</Link>
           ))}
         </div>
-        {invoices.length === 0 ? <p className="hint">No invoices yet.</p> : (
+        {invoices.length === 0 ? <p className="hint">No statements yet.</p> : (
           <div className="table-wrap">
             <table className="data-table">
-              <thead><tr><th scope="col">Invoice</th><th scope="col">Venue</th><th scope="col">Plan</th><th scope="col">Booking fees</th><th scope="col">Total</th><th scope="col">Status</th><th scope="col">Action</th></tr></thead>
+              <thead><tr><th scope="col">Statement</th><th scope="col">Venue</th><th scope="col">Open play</th><th scope="col">Court bookings</th><th scope="col">Owed to you</th><th scope="col">Status</th><th scope="col">Action</th></tr></thead>
               <tbody>
                 {invoices.map((i) => (
                   <tr key={i.id}>
-                    <td><Link href={`/venue/${i.venue_id}/invoice/${i.id}`}>{i.number}</Link><br /><span className="hint">{i.period_start} · due {i.due_date}</span></td>
+                    <td><Link href={`/venue/${i.venue_id}/invoice/${i.id}`}>{i.number}</Link><br /><span className="hint">{i.period} · due {i.due_date}</span></td>
                     <td>{i.venue}</td>
-                    <td>{peso(i.subscription_cents)}</td>
+                    <td>{peso(i.open_play_fee_cents)}<br /><span className="hint">{i.open_play_count} players</span></td>
                     <td>{peso(i.booking_fee_cents)}<br /><span className="hint">{i.booking_count} bookings</span></td>
                     <td><strong>{peso(i.total_cents)}</strong></td>
-                    <td><span className={`badge ${i.status === "paid" ? "badge-ok" : i.status === "open" ? "badge-warn" : "badge-muted"}`}>{i.status}</span>{i.paid_via && <><br /><span className="hint">{i.paid_via}</span></>}</td>
+                    <td><span className={`badge ${i.status === "paid" ? "badge-ok" : i.overdue ? "badge-bad" : i.status === "open" ? "badge-warn" : "badge-muted"}`}>{i.overdue ? "overdue" : i.status}</span>{i.paid_via && <><br /><span className="hint">{i.paid_via}</span></>}</td>
                     <td>
                       {i.status === "open" && (
                         <form action={setInvoiceStatus} className="inline-form">
@@ -330,25 +411,21 @@ async function Billing({ month, status }: { month?: string; status?: string }) {
 }
 
 async function BillingSettings() {
-  const [prices, billing, pm] = await Promise.all([planPrices(), billingSettings(), platformPaymongo()]);
+  const [billing, pm] = await Promise.all([billingSettings(), platformPaymongo()]);
   return (
     <>
       <form action={saveBilling} className="app-card form-grid" style={{ maxWidth: 720 }}>
-        <h2>Venue plans and invoices</h2>
-        <p className="hint">Monthly price per plan in pesos. Venues pay nothing during their free trial. Price changes apply to the next invoices you create.</p>
-        <div className="field-row">
-          {PLAN_IDS.map((p) => (
-            <div key={p} className="field"><label htmlFor={`price_${p}`}>{p[0].toUpperCase() + p.slice(1)} (₱/month)</label><input id={`price_${p}`} name={`price_${p}`} className="input" inputMode="decimal" defaultValue={prices[p] / 100} /></div>
-          ))}
-        </div>
-        {PLAN_IDS.some((p) => prices[p] === 0) && <div className="alert alert-warn">Some plans are priced at ₱0. Set prices before venues&apos; trials end.</div>}
-        <div className="field"><label htmlFor="due_days">Payment terms (days after month end)</label><input id="due_days" name="due_days" type="number" min={0} max={60} className="input" defaultValue={billing.due_days} /></div>
-        <div className="field"><label htmlFor="manual_instructions">How venues can pay manually (shown on invoices)</label><textarea id="manual_instructions" name="manual_instructions" className="input textarea" defaultValue={billing.manual_instructions} placeholder="e.g. GCash 0917 000 0000 (Playbook Inc.) or BDO account …, then reply with the reference number." /></div>
-        <button className="btn" type="submit">Save billing settings</button>
+        <h2>Weekly statements</h2>
+        <p className="hint">Each Monday every venue gets a statement of your cut for the week before.</p>
+        <div className="field"><label htmlFor="due_days">Days a venue has to pay after the statement</label><input id="due_days" name="due_days" type="number" min={0} max={60} className="input" defaultValue={billing.due_days} /></div>
+        <label className="check"><input type="checkbox" name="auto_pause" value="1" defaultChecked={billing.auto_pause} /> <span>Pause a venue automatically when a statement is past due (no new bookings or check-ins until it is paid)</span></label>
+        <div className="field"><label htmlFor="manual_instructions">How venues pay you (shown on statements)</label><textarea id="manual_instructions" name="manual_instructions" className="input textarea" defaultValue={billing.manual_instructions} placeholder="e.g. GCash 0917 000 0000 (Playbook) or BDO account …, then send the reference number." /></div>
+        {!billing.manual_instructions && !pm && <div className="alert alert-warn">Venues have no way to pay you yet. Add payment instructions here or connect PayMongo below.</div>}
+        <button className="btn" type="submit">Save statement settings</button>
       </form>
       <form action={connectPlatformPaymongo} className="app-card form-grid" style={{ maxWidth: 720 }}>
-        <h2>Your PayMongo account (for invoice payments)</h2>
-        {pm ? <div className="alert alert-ok">Connected in <strong>{pm.livemode ? "live" : "test"}</strong> mode since {when(pm.connected_at)}.</div> : <p className="hint">Connect Playbook&apos;s own PayMongo account so venues can pay invoices by GCash, Maya or card. Until then, venues see your manual payment instructions.</p>}
+        <h2>Your PayMongo account (for statement payments)</h2>
+        {pm ? <div className="alert alert-ok">Connected in <strong>{pm.livemode ? "live" : "test"}</strong> mode since {when(pm.connected_at)}.</div> : <p className="hint">Connect Playbook&apos;s own PayMongo account so venues can pay statements by GCash, Maya or card. Until then, venues see your manual payment instructions.</p>}
         <div className="field"><label htmlFor="ppk">Public key</label><input id="ppk" name="public_key" className="input" placeholder="pk_live_…" autoComplete="off" required /></div>
         <div className="field"><label htmlFor="psk">Secret key</label><input id="psk" name="secret_key" type="password" className="input" placeholder="sk_live_…" autoComplete="off" required /></div>
         <button className="btn btn-sm" type="submit">{pm ? "Replace keys" : "Connect PayMongo"}</button>

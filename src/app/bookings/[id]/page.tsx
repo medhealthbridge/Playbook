@@ -12,7 +12,9 @@ import { q1 } from "@/lib/server/db";
 import { emailBookingConfirmed } from "@/lib/server/notify";
 import { checkoutPayments } from "@/lib/server/paymongo";
 import { getSession, isPlatformAdmin, venueRole } from "@/lib/server/session";
-import { cancelBooking, confirmAtVenue, payOnline } from "../actions";
+import { cancelBooking, confirmAtVenue, payOnline, updateBookingExtras } from "../actions";
+import { RentalFields } from "@/components/portal/RentalFields";
+import { rentalLinesFor, venueRentals } from "@/lib/server/rentals";
 import { postBookingMessage } from "../../messages/actions";
 import { q } from "@/lib/server/db";
 
@@ -63,6 +65,7 @@ export default async function BookingPage({ params, searchParams }: { params: Pr
   const cancellable = canCancel(b.status, b.date, b.start_min, Date.now());
   const refundIfNow = refundCents(b.paid_cents, b.date, b.start_min, v.free_cancel_hours, Date.now());
   const balance = Math.max(0, b.price_cents - b.paid_cents);
+  const [rentalItems, rentalLines] = await Promise.all([b.status === "held" ? venueRentals(v.id) : Promise.resolve([]), rentalLinesFor({ bookingId: b.id })]);
 
   return (
     <main id="main" className="app-shell">
@@ -77,6 +80,8 @@ export default async function BookingPage({ params, searchParams }: { params: Pr
               <dt>Where</dt><dd>{court?.name} · {v.area}<br /><span className="hint">{v.address}</span></dd>
               <dt>Sport</dt><dd>{sport}</dd>
               <dt>Booked by</dt><dd>{b.customer_name}{b.customer_email ? ` · ${b.customer_email}` : ""}</dd>
+              {b.party_size && (<><dt>Players</dt><dd>{b.party_size}</dd></>)}
+              {rentalLines.length > 0 && (<><dt>Rentals</dt><dd>{rentalLines.map((l) => `${l.qty} × ${l.name}`).join(", ")} · {peso(b.rental_cents)}</dd></>)}
               <dt>Total</dt><dd><strong>{peso(b.price_cents)}</strong>{b.paid_cents > 0 && <> · paid {peso(b.paid_cents)}</>}{b.status !== "cancelled" && balance > 0 && b.status === "confirmed" && <> · <strong>{peso(balance)}</strong> due at the venue</>}</dd>
               {b.status === "cancelled" && (<><dt>Cancelled</dt><dd>{when(b.cancelled_at)}{b.cancel_reason ? ` · ${b.cancel_reason}` : ""}{b.refund_cents > 0 ? ` · refund ${peso(b.refund_cents)}` : ""}</dd></>)}
               {b.checked_in_at && (<><dt>Checked in</dt><dd>{when(b.checked_in_at)}</dd></>)}
@@ -84,14 +89,24 @@ export default async function BookingPage({ params, searchParams }: { params: Pr
           </section>
 
           {b.status === "held" && isPlayer && (
+            <form action={updateBookingExtras} className="app-card form-grid">
+              <h2>1. Who&apos;s playing</h2>
+              <input type="hidden" name="id" value={b.id} />
+              <div className="field"><label htmlFor="party_size">How many people are playing?</label><input id="party_size" name="party_size" type="number" min={1} max={60} className="input" defaultValue={b.party_size ?? 4} required style={{ maxWidth: 120 }} /></div>
+              <RentalFields items={rentalItems} />
+              <button className="btn btn-sm btn-outline" type="submit">Save players{rentalItems.length > 0 ? " and rentals" : ""}</button>
+            </form>
+          )}
+
+          {b.status === "held" && isPlayer && (
             <section className="app-card">
-              <div className="inline-form"><h2 style={{ marginRight: "auto" }}>Confirm your booking</h2>{b.hold_expires_at && <HoldTimer until={b.hold_expires_at} />}</div>
+              <div className="inline-form"><h2 style={{ marginRight: "auto" }}>2. Confirm your booking</h2>{b.hold_expires_at && <HoldTimer until={b.hold_expires_at} />}</div>
               <p className="hint">We&apos;re holding this time for you. Confirm before the timer runs out.</p>
               <div className="chip-row">
                 {online && (
                   <form action={payOnline}>
                     <input type="hidden" name="id" value={b.id} />
-                    <button className="btn" type="submit">Pay {b.deposit_cents > 0 && b.deposit_cents < b.price_cents ? `${peso(b.deposit_cents)} deposit` : peso(b.price_cents)} · GCash, Maya, card</button>
+                    <button className="btn" type="submit">Pay {b.deposit_cents > 0 && b.deposit_cents < b.price_cents ? `${peso(b.deposit_cents)} deposit` : peso(b.price_cents)} · GCash, Maya, QR Ph, card</button>
                   </form>
                 )}
                 {v.allow_pay_at_venue && (

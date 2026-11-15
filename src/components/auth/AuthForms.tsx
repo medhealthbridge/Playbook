@@ -104,7 +104,8 @@ export function SignupForm() {
     if (name.length < 2) return setError("Enter your name.");
     if (password.length < 8) return setError("Use at least 8 characters for your password.");
     if (password !== String(f.get("confirm"))) return setError("Passwords don't match.");
-    if (!f.get("terms")) return setError("Please accept the Terms and Privacy Policy.");
+    if (!f.get("terms")) return setError("Please tick the box to agree to the Terms of Service.");
+    if (!f.get("privacy")) return setError("Please tick the box to agree to the Privacy Policy.");
     setBusy(true);
     setError(null);
     const { data, error } = await authClient.signUp.email({ name, email, password, callbackURL: `/login?verified=1&next=${encodeURIComponent(next)}` });
@@ -146,7 +147,10 @@ export function SignupForm() {
           </div>
         </div>
         <label className="check">
-          <input type="checkbox" name="terms" /> <span>I agree to the <Link href="/terms">Terms</Link> and <Link href="/privacy">Privacy Policy</Link>.</span>
+          <input type="checkbox" name="terms" required /> <span>I agree to the <Link href="/terms" target="_blank">Terms of Service</Link>.</span>
+        </label>
+        <label className="check">
+          <input type="checkbox" name="privacy" required /> <span>I have read the <Link href="/privacy" target="_blank">Privacy Policy</Link> and agree to Playbook and the venues I book with using my name, contact details, bookings and game results to run my bookings.</span>
         </label>
         <button className="btn" type="submit" disabled={busy}>{busy ? "Creating account…" : "Create account"}</button>
       </form>

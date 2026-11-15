@@ -322,3 +322,90 @@ CREATE INDEX IF NOT EXISTS venue_announcement_idx ON venue_announcement (venue_i
 
 -- Expiring holds: keeps the frequent clean-up UPDATE an index lookup.
 CREATE INDEX IF NOT EXISTS booking_held_expiry_idx ON booking (hold_expires_at) WHERE status = 'held';
+
+-- ---------------------------------------------------------------- Free model: cut per player / per court
+-- Venues pay no subscription. Playbook's cut is set by the platform admin:
+-- open play (per checked-in player) and court bookings each have a mode
+-- (fixed centavos, or percent with an optional minimum).
+INSERT INTO platform_setting (key, value) VALUES
+  ('cut', '{"open_play":{"mode":"fixed","value":3000,"min_cents":0},"court":{"mode":"percent","value":20,"min_cents":0},"staff_bookings":true}')
+ON CONFLICT (key) DO NOTHING;
+
+-- Open play: the cut is owed at check-in, whatever the payment method. Voids keep a trail.
+ALTER TABLE open_play_player ADD COLUMN IF NOT EXISTS platform_fee_cents int NOT NULL DEFAULT 0;
+ALTER TABLE open_play_player ADD COLUMN IF NOT EXISTS pay_method text CHECK (pay_method IN ('cash', 'online'));
+ALTER TABLE open_play_player ADD COLUMN IF NOT EXISTS paid_at timestamptz;
+ALTER TABLE open_play_player ADD COLUMN IF NOT EXISTS rental_cents int NOT NULL DEFAULT 0;
+ALTER TABLE open_play_player ADD COLUMN IF NOT EXISTS voided_at timestamptz;
+ALTER TABLE open_play_player ADD COLUMN IF NOT EXISTS void_reason text;
+ALTER TABLE open_play_player ADD COLUMN IF NOT EXISTS voided_by text REFERENCES "user"(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS open_play_player_checkin_idx ON open_play_player (checked_in_at) WHERE checked_in_at IS NOT NULL;
+
+-- Final scores entered by the facilitator; the winner is derived from them.
+ALTER TABLE open_play_game ADD COLUMN IF NOT EXISTS score_a int CHECK (score_a BETWEEN 0 AND 99);
+ALTER TABLE open_play_game ADD COLUMN IF NOT EXISTS score_b int CHECK (score_b BETWEEN 0 AND 99);
+
+-- Player level per sport. Starts self-declared, then moves with results.
+CREATE TABLE IF NOT EXISTS player_skill (
+  user_id    text NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
+  sport      text NOT NULL,
+  level      text NOT NULL CHECK (level IN ('beginner', 'intermediate', 'advanced')),
+  rating     int  NOT NULL,
+  games      int  NOT NULL DEFAULT 0,
+  wins       int  NOT NULL DEFAULT 0,
+  losses     int  NOT NULL DEFAULT 0,
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (user_id, sport)
+);
+
+-- Court bookings: how many people, and rentals (no cut on rentals).
+ALTER TABLE booking ADD COLUMN IF NOT EXISTS party_size int CHECK (party_size BETWEEN 1 AND 60);
+ALTER TABLE booking ADD COLUMN IF NOT EXISTS rental_cents int NOT NULL DEFAULT 0;
+
+CREATE TABLE IF NOT EXISTS rental_item (
+  id          text PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  venue_id    text NOT NULL REFERENCES venue(id) ON DELETE CASCADE,
+  name        text NOT NULL,
+  price_cents int  NOT NULL CHECK (price_cents >= 0),
+  active      boolean NOT NULL DEFAULT true,
+  created_at  timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS rental_item_venue_idx ON rental_item (venue_id);
+
+CREATE TABLE IF NOT EXISTS rental_line (
+  id                  bigserial PRIMARY KEY,
+  venue_id            text NOT NULL REFERENCES venue(id) ON DELETE CASCADE,
+  item_id             text REFERENCES rental_item(id) ON DELETE SET NULL,
+  name                text NOT NULL,
+  qty                 int  NOT NULL CHECK (qty BETWEEN 1 AND 20),
+  unit_cents          int  NOT NULL,
+  booking_id          text REFERENCES booking(id) ON DELETE CASCADE,
+  open_play_player_id text REFERENCES open_play_player(id) ON DELETE CASCADE,
+  created_at          timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS rental_line_booking_idx ON rental_line (booking_id);
+CREATE INDEX IF NOT EXISTS rental_line_player_idx ON rental_line (open_play_player_id);
+
+-- Owners can block a player from their venue.
+CREATE TABLE IF NOT EXISTS venue_player_block (
+  venue_id   text NOT NULL REFERENCES venue(id) ON DELETE CASCADE,
+  user_id    text NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
+  reason     text,
+  created_by text REFERENCES "user"(id) ON DELETE SET NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (venue_id, user_id)
+);
+
+-- Weekly statements reuse the invoice table: add the open-play part.
+ALTER TABLE invoice ADD COLUMN IF NOT EXISTS open_play_count int NOT NULL DEFAULT 0;
+ALTER TABLE invoice ADD COLUMN IF NOT EXISTS open_play_fee_cents int NOT NULL DEFAULT 0;
+
+-- Consent record: which Terms / Privacy Policy version an account agreed to, and when.
+CREATE TABLE IF NOT EXISTS user_consent (
+  id        bigserial PRIMARY KEY,
+  user_id   text NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
+  document  text NOT NULL,
+  version   text NOT NULL,
+  agreed_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS user_consent_user_idx ON user_consent (user_id);

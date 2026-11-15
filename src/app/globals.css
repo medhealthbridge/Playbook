@@ -3578,3 +3578,44 @@ a[role="tab"] {
 :root[data-theme="dark"] .theme-toggle .ico-moon {
   display: none;
 }
+
+/* ---------------- payment bell ---------------- */
+.pay-bell {
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+}
+.pay-bell-item {
+  width: 100%;
+  animation: pay-in 0.35s var(--ease);
+}
+@keyframes pay-in {
+  from { transform: translateY(-6px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+.score-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.score-form .input {
+  width: 64px;
+  text-align: center;
+}
+.rental-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 0;
+}
+.rental-row .input {
+  width: 72px;
+}
+
+.check input[type="checkbox"] {
+  flex: none;
+  width: 18px;
+  height: 18px;
+}

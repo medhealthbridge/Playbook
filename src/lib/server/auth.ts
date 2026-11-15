@@ -5,6 +5,9 @@ import { admin } from "better-auth/plugins";
 import { getPool } from "./db";
 import { actionEmail, emailConfigured, sendEmail } from "./email";
 
+/** Bump when the Terms or Privacy Policy text changes. */
+export const POLICY_VERSION = "2026-11";
+
 const adminEmails = () =>
   (process.env.PLATFORM_ADMIN_EMAILS || "")
     .split(",")
@@ -48,6 +51,12 @@ export const auth = betterAuth({
         before: async (user) => ({
           data: { ...user, role: adminEmails().includes(user.email.toLowerCase()) ? "admin" : "user" },
         }),
+        // The sign-up form can't be submitted without both boxes ticked; keep the record of what was agreed to.
+        after: async (user) => {
+          await getPool()
+            .query("INSERT INTO user_consent (user_id, document, version) VALUES ($1,'terms',$2), ($1,'privacy',$2)", [user.id, POLICY_VERSION])
+            .catch((e) => console.error("consent record failed", e));
+        },
       },
     },
   },

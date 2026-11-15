@@ -1,6 +1,10 @@
 import "server-only";
 import { afterGame, joinCode, nextGroup, teams, type QPlayer, type Skill } from "@/lib/openplay/queue";
+import { cutCents } from "@/lib/booking/engine";
+import { cutSettings, venuePaused } from "./billing";
 import { audit, q, q1, tx } from "./db";
+import { replaceRentalLines, rentalTotal, type RentalLine } from "./rentals";
+import { applyResult, ensureSkill } from "./skills";
 
 export type Session = {
   id: string; venue_id: string; code: string; title: string; sport: string; date: string; start_min: number; end_min: number; court_ids: string[];
@@ -9,8 +13,11 @@ export type Session = {
 export type Player = {
   id: string; session_id: string; user_id: string | null; name: string; skill: Skill; status: string; queue_at: string | null;
   games_played: number; win_streak: number; paid_cents: number; checked_in_at: string | null;
+  platform_fee_cents: number; pay_method: string | null; paid_online: boolean; rental_cents: number; voided_at: string | null; void_reason: string | null;
 };
 export type Game = { id: string; session_id: string; resource_id: string; team_a: string[]; team_b: string[]; winner: string | null; status: string; started_at: string };
+const PAUSED = "Check-ins are paused until the overdue Playbook statement is paid (see Statements).";
+const peso = (c: number) => `₱${(c / 100).toLocaleString("en-PH")}`;
 
 const SESSION_COLS = "id, venue_id, code, title, sport, to_char(date,'YYYY-MM-DD') AS date, start_min, end_min, court_ids, fee_cents, max_players, mode, skill_match, status";
 export class OpenPlayError extends Error {}
@@ -63,37 +70,79 @@ export async function createSession(venueId: string, actorId: string, s: {
   });
 }
 
-export async function joinSession(session: Session, user: { id: string; name: string }, skill: Skill) {
+export async function joinSession(session: Session, user: { id: string; name: string }, declared: Skill, rentals: RentalLine[] = []) {
   if (session.status === "ended" || session.status === "cancelled") throw new OpenPlayError("This session has ended.");
+  if (await q1("SELECT 1 FROM venue_player_block WHERE venue_id=$1 AND user_id=$2", [session.venue_id, user.id])) throw new OpenPlayError("This venue isn't taking sign-ups from your account. Contact the venue.");
   const n = await q1<{ n: number }>("SELECT count(*)::int AS n FROM open_play_player WHERE session_id=$1 AND status <> 'left'", [session.id]);
   if (n!.n >= session.max_players) throw new OpenPlayError("This session is full.");
-  await q(
-    `INSERT INTO open_play_player (session_id, user_id, name, skill) VALUES ($1,$2,$3,$4)
-     ON CONFLICT (session_id, user_id) DO UPDATE SET status = CASE WHEN open_play_player.status='left' THEN 'registered' ELSE open_play_player.status END, skill=EXCLUDED.skill`,
-    [session.id, user.id, user.name, skill],
-  );
+  // The profile level wins over what the form says once it exists.
+  const skill = await ensureSkill(user.id, session.sport, declared);
+  await tx(async (run) => {
+    const [p] = await run<{ id: string; status: string }>(
+      `INSERT INTO open_play_player (session_id, user_id, name, skill) VALUES ($1,$2,$3,$4)
+       ON CONFLICT (session_id, user_id) DO UPDATE SET status = CASE WHEN open_play_player.status='left' AND open_play_player.voided_at IS NULL THEN 'registered' ELSE open_play_player.status END, skill=EXCLUDED.skill
+       RETURNING id, status`,
+      [session.id, user.id, user.name, skill],
+    );
+    if (p.status === "left") throw new OpenPlayError("You were removed from this session. Ask the front desk.");
+    if (p.status === "registered") {
+      await replaceRentalLines(run, session.venue_id, { playerId: p.id }, rentals);
+      await run("UPDATE open_play_player SET rental_cents=$2 WHERE id=$1 AND NOT paid_online", [p.id, rentalTotal(rentals)]);
+    }
+  });
 }
 
-export async function addWalkIn(sessionId: string, name: string, skill: Skill, paidCents: number) {
-  await q(
-    "INSERT INTO open_play_player (session_id, name, skill, status, queue_at, checked_in_at, paid_cents) VALUES ($1,$2,$3,'waiting',now(),now(),$4)",
-    [sessionId, name, skill, paidCents],
-  );
+/** Front desk adds someone without a phone. Payment must be recorded: no payment, no play. */
+export async function addWalkIn(session: Session, name: string, skill: Skill, paidCents: number, rentals: RentalLine[] = []) {
+  if (await venuePaused(session.venue_id)) throw new OpenPlayError(PAUSED);
+  const due = session.fee_cents + rentalTotal(rentals);
+  if (paidCents < due) throw new OpenPlayError(`Record the payment first: ${peso(due)} is due.`);
+  const cut = await cutSettings();
+  await tx(async (run) => {
+    const [p] = await run<{ id: string }>(
+      `INSERT INTO open_play_player (session_id, name, skill, status, queue_at, checked_in_at, paid_cents, rental_cents, pay_method, paid_at, platform_fee_cents)
+       VALUES ($1,$2,$3,'waiting',now(),now(),$4,$5,'cash',now(),$6) RETURNING id`,
+      [session.id, name, skill, paidCents, rentalTotal(rentals), cutCents(session.fee_cents, cut.open_play)],
+    );
+    await replaceRentalLines(run, session.venue_id, { playerId: p.id }, rentals);
+  });
 }
 
-export async function checkInPlayer(sessionId: string, playerId: string, paidCents: number) {
-  await q(
-    `UPDATE open_play_player SET status='waiting', queue_at=now(), checked_in_at=coalesce(checked_in_at, now()), paid_cents=paid_cents+$3
-      WHERE id=$1 AND session_id=$2 AND status='registered'`,
-    [playerId, sessionId, paidCents],
-  );
+/** Check a registered player in. They must have paid online, or the cash must be recorded now. The cut is owed from this moment. */
+export async function checkInPlayer(session: Session, playerId: string, cashCents: number) {
+  if (await venuePaused(session.venue_id)) throw new OpenPlayError(PAUSED);
+  const cut = await cutSettings();
+  await tx(async (run) => {
+    const [p] = await run<Player>("SELECT * FROM open_play_player WHERE id=$1 AND session_id=$2 FOR UPDATE", [playerId, session.id]);
+    if (!p || p.status !== "registered") throw new OpenPlayError("That player is already checked in or has left.");
+    const due = session.fee_cents + p.rental_cents - p.paid_cents;
+    if (due > 0 && cashCents < due) throw new OpenPlayError(`Record the payment first: ${peso(due)} is due from ${p.name}. No payment, no play.`);
+    await run(
+      `UPDATE open_play_player SET status='waiting', queue_at=now(), checked_in_at=now(), paid_cents=paid_cents+$2,
+              pay_method=coalesce(pay_method, CASE WHEN $2 > 0 THEN 'cash' END), paid_at=coalesce(paid_at, CASE WHEN $2 > 0 THEN now() END), platform_fee_cents=$3
+        WHERE id=$1`,
+      [playerId, Math.max(0, cashCents), cutCents(session.fee_cents, cut.open_play)],
+    );
+  });
 }
 
-/** waiting | resting | left. Back to the queue goes to the end of the line. */
+/** Remove a checked-in player who has not played yet (for example a refund). Needs a reason; the platform admin sees every void. */
+export async function voidPlayer(session: Session, playerId: string, reason: string, actorId: string) {
+  const r = await q1<{ id: string }>(
+    `UPDATE open_play_player SET status='left', voided_at=now(), void_reason=$3, voided_by=$4, platform_fee_cents=0
+      WHERE id=$1 AND session_id=$2 AND status IN ('waiting','resting') AND games_played=0 AND voided_at IS NULL RETURNING id`,
+    [playerId, session.id, reason, actorId],
+  );
+  if (!r) throw new OpenPlayError("Only a checked-in player who hasn't played yet can be voided.");
+  await audit(actorId, "openplay.void", "open_play_player", playerId, { sessionId: session.id, venueId: session.venue_id, reason });
+}
+
+/** waiting | resting | left. Back to the queue goes to the end of the line. Registered players can't jump into the queue here: that is check-in. */
 export async function setPlayerStatus(sessionId: string, playerId: string, status: "waiting" | "resting" | "left") {
   await q(
     `UPDATE open_play_player SET status=$3, queue_at = CASE WHEN $3='waiting' THEN now() ELSE queue_at END
-      WHERE id=$1 AND session_id=$2 AND status IN ('waiting','resting','registered')`,
+      WHERE id=$1 AND session_id=$2 AND voided_at IS NULL
+        AND (status IN ('waiting','resting') OR (status='registered' AND $3='left'))`,
     [playerId, sessionId, status],
   );
 }
@@ -129,15 +178,24 @@ export async function fillCourts(sessionId: string) {
 }
 
 /** Record a result, rotate players, and refill free courts. */
-export async function endGame(sessionId: string, gameId: string, winner: "a" | "b" | null, actorId: string) {
+export async function endGame(sessionId: string, gameId: string, score: { a: number; b: number } | null, actorId: string) {
+  if (score && (score.a === score.b || [score.a, score.b].some((n) => !Number.isInteger(n) || n < 0 || n > 99))) throw new OpenPlayError("Enter the final score for both teams. A game can't end level.");
+  const winner: "a" | "b" | null = score ? (score.a > score.b ? "a" : "b") : null;
   await tx(async (run) => {
     const [s] = await run<Session>(`SELECT ${SESSION_COLS} FROM open_play_session WHERE id=$1 FOR UPDATE`, [sessionId]);
     const [g] = await run<Game>("SELECT id, session_id, resource_id, team_a, team_b, winner, status, started_at FROM open_play_game WHERE id=$1 AND session_id=$2 FOR UPDATE", [gameId, sessionId]);
     if (!s || !g || g.status !== "playing") throw new OpenPlayError("That game already ended.");
-    await run("UPDATE open_play_game SET status='done', winner=$2, ended_at=now() WHERE id=$1", [gameId, winner]);
+    await run("UPDATE open_play_game SET status='done', winner=$2, score_a=$3, score_b=$4, ended_at=now() WHERE id=$1", [gameId, winner, score?.a ?? null, score?.b ?? null]);
     const winners = winner === "a" ? g.team_a : winner === "b" ? g.team_b : [];
     const losers = winner === "a" ? g.team_b : winner === "b" ? g.team_a : [...g.team_a, ...g.team_b];
     await run("UPDATE open_play_player SET games_played=games_played+1, win_streak = CASE WHEN id = ANY($1) THEN win_streak+1 ELSE 0 END WHERE id = ANY($2)", [winners, [...g.team_a, ...g.team_b]]);
+    if (winner) {
+      // Results move each account's rating and level for this sport, and the level used for the rest of the session.
+      const ps = await run<{ id: string; user_id: string | null; skill: Skill }>("SELECT id, user_id, skill FROM open_play_player WHERE id = ANY($1)", [[...g.team_a, ...g.team_b]]);
+      const side = (ids: string[]) => ps.filter((p) => ids.includes(p.id)).map((p) => ({ userId: p.user_id, skill: p.skill }));
+      await applyResult(run, s.sport, side(winners), side(losers));
+      await run("UPDATE open_play_player p SET skill = k.level FROM player_skill k WHERE p.id = ANY($1) AND k.user_id = p.user_id AND k.sport = $2", [[...g.team_a, ...g.team_b], s.sport]);
+    }
     const streak = winners.length ? (await run<{ s: number }>("SELECT max(win_streak)::int AS s FROM open_play_player WHERE id = ANY($1)", [winners]))[0].s : 0;
     const out = afterGame(s.mode, g.team_a, g.team_b, winner, streak);
     // Losers go back first, then winners rotating off, so ties keep a fair order.
@@ -158,7 +216,7 @@ export async function endGame(sessionId: string, gameId: string, winner: "a" | "
     }
     if (s.status === "live") await fillWith(run, s);
   });
-  await audit(actorId, "openplay.game_end", "open_play_session", sessionId, { gameId, winner });
+  await audit(actorId, "openplay.game_end", "open_play_session", sessionId, { gameId, winner, score });
 }
 
 export async function setSessionStatus(sessionId: string, status: "live" | "ended" | "cancelled", actorId: string) {
@@ -173,11 +231,19 @@ export async function setSessionStatus(sessionId: string, status: "live" | "ende
   await audit(actorId, `openplay.${status}`, "open_play_session", sessionId);
 }
 
-/** Record an online fee payment once (idempotent). */
+/** Record an online payment once (idempotent). If the session is live the player goes straight into the queue. */
 export async function markOpenPlayPaid(playerId: string, cents: number, paymentId: string | null) {
-  const r = await q1<{ id: string }>(
-    "UPDATE open_play_player SET paid_cents = paid_cents + $2, paid_online = true, payment_id = $3 WHERE id=$1 AND NOT paid_online RETURNING id",
-    [playerId, cents, paymentId],
-  );
-  return !!r;
+  const cut = await cutSettings();
+  return tx(async (run) => {
+    const [p] = await run<{ id: string; session_id: string; status: string }>(
+      "UPDATE open_play_player SET paid_cents = paid_cents + $2, paid_online = true, pay_method='online', paid_at=now(), payment_id = $3 WHERE id=$1 AND NOT paid_online RETURNING id, session_id, status",
+      [playerId, cents, paymentId],
+    );
+    if (!p) return false;
+    const [s] = await run<{ status: string; fee_cents: number; venue_id: string }>("SELECT status, fee_cents, venue_id FROM open_play_session WHERE id=$1", [p.session_id]);
+    if (s?.status === "live" && p.status === "registered") {
+      await run("UPDATE open_play_player SET status='waiting', queue_at=now(), checked_in_at=now(), platform_fee_cents=$2 WHERE id=$1", [playerId, cutCents(s.fee_cents, cut.open_play)]);
+    }
+    return true;
+  });
 }

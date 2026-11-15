@@ -61,7 +61,7 @@ export default async function NewVenuePage({ searchParams }: { searchParams: Pro
 
             <fieldset className="form-section">
               <legend><h2>Courts, tables and pitches</h2></legend>
-              <p className="hint">Add at least one. Leave a row's name empty to skip it.</p>
+              <p className="hint">Add at least one. Leave a row&apos;s name empty to skip it.</p>
               {[0, 1, 2, 3, 4, 5].map((i) => <CourtFields key={i} i={i} required={i === 0} />)}
             </fieldset>
 

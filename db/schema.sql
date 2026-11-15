@@ -319,3 +319,6 @@ CREATE TABLE IF NOT EXISTS venue_announcement (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS venue_announcement_idx ON venue_announcement (venue_id, created_at DESC);
+
+-- Expiring holds: keeps the frequent clean-up UPDATE an index lookup.
+CREATE INDEX IF NOT EXISTS booking_held_expiry_idx ON booking (hold_expires_at) WHERE status = 'held';

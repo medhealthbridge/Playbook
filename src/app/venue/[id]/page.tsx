@@ -9,8 +9,8 @@ import { requireVenueRole } from "@/lib/server/session";
 import { cancelSeries, createSeries, choosePlan, addBlock, addCourt, addMember, checkIn, connectPaymongo, disconnectPaymongo, markNoShow, removeBlock, removeMember, setPayAtVenue, updateCourt, updateVenue, walkIn } from "../actions";
 import { addDays, formatDate, formatRange, formatTime, manilaToday } from "@/lib/booking/time";
 import { hmToMin } from "@/lib/booking/engine";
-import { blocksOn, venueBookingsOn, venueById as getVenue } from "@/lib/server/bookings";
-import { PLAN_IDS, billingSettings, feesFor, monthRange, planPrices, platformPaymongo, subscriptionFor } from "@/lib/server/billing";
+import { blocksOn, expireHolds, venueBookingsOn, venueById as getVenue } from "@/lib/server/bookings";
+import { PLAN_IDS, feesFor, monthRange, planPrices, subscriptionFor } from "@/lib/server/billing";
 import { VENUE_PLANS } from "@/content/plans";
 import { venueSessions } from "@/lib/server/openplay";
 import { createOpenPlay } from "../../openplay/actions";
@@ -244,6 +244,7 @@ function Settings({ venue }: { venue: Venue }) {
 const STATUS_CLS: Record<string, string> = { held: "held", confirmed: "confirmed", completed: "confirmed", no_show: "noshow" };
 
 async function Calendar({ venueId, date, canManage }: { venueId: string; date: string; canManage: boolean }) {
+  await expireHolds();
   const [venue, courts, bookings, blocks] = await Promise.all([getVenue(venueId), q<Court>("SELECT id, name, kind, sports, indoor, hourly_rate_cents, active FROM resource WHERE venue_id=$1 AND active ORDER BY sort, created_at", [venueId]), venueBookingsOn(venueId, date), blocksOn(venueId, date)]);
   const open = hmToMin(venue!.open_time);
   const close = hmToMin(venue!.close_time);
@@ -575,7 +576,7 @@ async function RecurringTab({ venueId, canManage }: { venueId: string; canManage
       `SELECT s.id, s.customer_name, s.customer_phone, r.name AS court, s.weekday, s.start_min, s.end_min, to_char(s.first_date,'YYYY-MM-DD') AS first_date, s.weeks, s.price_cents, s.status,
               (SELECT count(*)::int FROM booking b WHERE b.series_id=s.id AND b.status='confirmed' AND b.date >= (now() AT TIME ZONE 'Asia/Manila')::date) AS upcoming,
               (SELECT to_char(max(b.date),'YYYY-MM-DD') FROM booking b WHERE b.series_id=s.id AND b.status <> 'cancelled') AS last_date
-         FROM booking_series s JOIN resource r ON r.id=s.resource_id WHERE s.venue_id=$1 ORDER BY s.status, s.created_at DESC`,
+         FROM booking_series s JOIN resource r ON r.id=s.resource_id WHERE s.venue_id=$1 ORDER BY s.status, s.created_at DESC LIMIT 100`,
       [venueId],
     ),
     q<Court>("SELECT id, name, kind, sports, indoor, hourly_rate_cents, active FROM resource WHERE venue_id=$1 AND active ORDER BY sort, created_at", [venueId]),

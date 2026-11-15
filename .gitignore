@@ -6,3 +6,6 @@ next-env.d.ts
 .env*
 .DS_Store
 __pycache__/
+!.env.example
+tests/qa/results.json
+tests/qa/seed.json

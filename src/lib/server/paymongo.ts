@@ -18,6 +18,7 @@ async function pm<T>(secret: string, path: string, init: { method?: string; body
     },
     body: init.body ? JSON.stringify(init.body) : undefined,
     cache: "no-store",
+    signal: AbortSignal.timeout(15_000),
   });
   const json = (await res.json().catch(() => ({}))) as { errors?: { detail?: string }[] } & T;
   if (!res.ok) throw new PaymongoError(json.errors?.[0]?.detail || `PayMongo error ${res.status}`, res.status);

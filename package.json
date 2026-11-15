@@ -7,7 +7,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "tsc --noEmit",
+    "lint": "eslint src && tsc --noEmit",
     "test": "node --experimental-strip-types --no-warnings tests/booking.test.ts && node --experimental-strip-types --no-warnings tests/engine.test.ts",
     "db:migrate": "node --env-file=.env.local scripts/migrate.mjs"
   },
@@ -24,11 +24,14 @@
     "three": "0.180.0"
   },
   "devDependencies": {
+    "@eslint/eslintrc": "^3.3.1",
     "@types/node": "22.15.3",
     "@types/qrcode": "1.5.6",
     "@types/react": "19.2.2",
     "@types/react-dom": "19.2.2",
     "@types/three": "0.180.0",
+    "eslint": "^9.39.1",
+    "eslint-config-next": "^15.5.4",
     "typescript": "5.9.3"
   },
   "overrides": {

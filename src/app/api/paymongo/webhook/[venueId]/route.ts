@@ -39,6 +39,17 @@ export async function POST(req: Request, { params }: { params: Promise<{ venueId
   );
   if (!fresh) return NextResponse.json({ ok: true, duplicate: true });
 
+  try {
+    return await handle(evt.data.id, venueId, type, obj);
+  } catch (e) {
+    // Processing failed: forget the event so PayMongo's retry is handled, not skipped as a duplicate.
+    await q("DELETE FROM payment_event WHERE id=$1", [evt.data.id]).catch(() => {});
+    console.error("paymongo webhook failed", { venueId, event: evt.data.id, type, error: (e as Error).message });
+    return NextResponse.json({ error: "processing failed" }, { status: 500 });
+  }
+}
+
+async function handle(eventId: string, venueId: string, type: string, obj: Event["data"]["attributes"]["data"]) {
   if (type === "checkout_session.payment.paid" && obj.attributes.metadata?.open_play_player_id) {
     const paid = (obj.attributes.payments ?? []).filter((p) => p.attributes.status === "paid");
     await markOpenPlayPaid(obj.attributes.metadata.open_play_player_id, paid.reduce((s, p) => s + p.attributes.amount, 0), paid[0]?.id ?? null);
@@ -49,7 +60,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ venueId
     if (!b || b.venue_id !== venueId) return NextResponse.json({ ok: true, ignored: "no booking" });
     const paid = (obj.attributes.payments ?? []).filter((p) => p.attributes.status === "paid");
     const paidCents = paid.reduce((s, p) => s + p.attributes.amount, 0);
-    await q("UPDATE payment_event SET booking_id=$2 WHERE id=$1", [evt.data.id, b.id]);
+    await q("UPDATE payment_event SET booking_id=$2 WHERE id=$1", [eventId, b.id]);
     try {
       const wasHeld = b.status !== "confirmed";
       const done = await confirmBooking(b.id, { method: "online", paidCents, paymentId: paid[0]?.id });

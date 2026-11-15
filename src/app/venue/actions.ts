@@ -5,7 +5,7 @@ import { audit, q, q1, tx } from "@/lib/server/db";
 import { METRO_AREAS, int, pesoToCents, slugify, str } from "@/lib/server/form";
 import { requireUser, requireVenueRole, type VenueRole } from "@/lib/server/session";
 import { SPORTS } from "@/content/sports";
-import { BookingError, confirmBooking, venueById, venueResources } from "@/lib/server/bookings";
+import { BookingError, confirmBooking, expireHolds, venueById, venueResources } from "@/lib/server/bookings";
 import { makeRef, priceCents } from "@/lib/booking/engine";
 import { encrypt, decrypt } from "@/lib/server/crypto";
 import { PaymongoError, createCheckout, createWebhook, disableWebhook, keyMode, verifySecretKey } from "@/lib/server/paymongo";
@@ -187,6 +187,7 @@ export async function walkIn(formData: FormData) {
   if (!r) back(path, { error: "Choose a court." });
   if (!Number.isFinite(start) || dur < 15 || dur > 600) back(path, { error: "Check the start time and duration." });
   const price = priceCents(r!.hourly_rate_cents, dur);
+  await expireHolds(); // an expired online hold must not block the desk
   try {
     const row = await q1<{ id: string }>(
       `INSERT INTO booking (ref, venue_id, resource_id, customer_name, customer_phone, sport, date, start_min, end_min, status, source, price_cents, deposit_cents, created_by)
@@ -379,6 +380,7 @@ export async function payInvoice(formData: FormData) {
 export async function createSeries(formData: FormData) {
   const venueId = str(formData, "venue_id", 60);
   const { user } = await requireVenueRole(venueId, "manager");
+  await expireHolds();
   const path = `/venue/${venueId}?tab=recurring`;
   const resourceId = str(formData, "resource_id", 60);
   const first = str(formData, "first_date", 10);

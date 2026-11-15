@@ -284,4 +284,5 @@ const go = async (p, sel) => { await Promise.all([p.waitForNavigation({ timeout:
   console.log('\nSUMMARY', results.filter(r => r.pass).length, 'pass /', results.length);
   require('fs').writeFileSync('results.json', JSON.stringify(results, null, 2));
   await b.close(); await pool.end();
+  process.exit(results.every(r => r.pass) ? 0 : 1); // a failing check fails the run
 })().catch(async e => { console.error('QA CRASH', e.message.split('\n').slice(0, 4).join(' | ')); require('fs').writeFileSync('results.json', JSON.stringify(results, null, 2)); process.exit(1); });

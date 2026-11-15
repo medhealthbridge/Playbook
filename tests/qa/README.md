@@ -9,8 +9,9 @@ answer, not on what the UI hides.
    `npm run build && npx next start -p 3100 > server.log 2>&1 &`
 2. Seed two QA venues and one user per role (`*@playbook.test`):
    `node tests/qa/seed.js` (writes `seed.json`)
-3. Run: `QA_SERVER_LOG=server.log node tests/qa/qa.js`
+3. Run: `node tests/qa/quality.js` (hold limits, webhooks, headers), then `QA_SERVER_LOG=server.log node tests/qa/qa.js`
+   (qa.js changes player2's password in its reset test, so run quality.js first or re-seed).
 4. Clean up QA data afterwards (only `@playbook.test` users and their venues).
 
 `PLATFORM_ADMIN_EMAILS` must include `admin-test@playbook.test` for the QA admin.
-Never point this at production data you care about.
+Point `.env.local` at the Neon `dev` branch, never at `main` (production).

@@ -50,7 +50,8 @@ export const publicVenues = (sport?: string) =>
        FROM venue
       WHERE status = 'active'
         AND EXISTS (SELECT 1 FROM resource r WHERE r.venue_id = venue.id AND r.active AND ($1::text IS NULL OR $1 = ANY(r.sports)))
-      ORDER BY name`,
+      ORDER BY name
+      LIMIT 200`,
     [sport ?? null],
   );
 
@@ -85,6 +86,10 @@ export const bookingDates = (days = 14, now = Date.now()) => Array.from({ length
 export const durationsFor = (r: ResourceRow) => durationChoices(r.min_duration_min, r.max_duration_min, r.increment_min);
 
 /** Create a held booking (10 minutes) after re-checking everything server-side. */
+/** Per-account limits on bookings not yet paid for. */
+export const MAX_ACTIVE_HOLDS = 3;
+export const MAX_UNPAID_PER_VENUE = 4;
+
 export async function createHold(input: {
   venue: VenueRow; resource: ResourceRow; date: string; startMin: number; durationMin: number; sport: string;
   user: { id: string; name: string; email: string }; phone?: string; notes?: string;
@@ -96,6 +101,16 @@ export async function createHold(input: {
   if (!durationsFor(r).includes(durationMin)) throw new BookingError("Choose a valid duration.");
   if (!bookingDates().includes(date)) throw new BookingError("Bookings open up to 14 days ahead.");
   await expireHolds();
+  // Abuse limits: one account can't tie up a venue's courts with holds or unpaid bookings.
+  const load = await q1<{ holds: number; unpaid: number }>(
+    `SELECT count(*) FILTER (WHERE status='held' AND hold_expires_at > now())::int AS holds,
+            count(*) FILTER (WHERE status='confirmed' AND venue_id=$2 AND paid_cents=0 AND source='online'
+                             AND date >= (now() AT TIME ZONE 'Asia/Manila')::date)::int AS unpaid
+       FROM booking WHERE user_id=$1`,
+    [user.id, venue.id],
+  );
+  if ((load?.holds ?? 0) >= MAX_ACTIVE_HOLDS) throw new BookingError(`You already have ${MAX_ACTIVE_HOLDS} bookings waiting for payment. Finish or cancel one first.`);
+  if ((load?.unpaid ?? 0) >= MAX_UNPAID_PER_VENUE) throw new BookingError(`You have ${MAX_UNPAID_PER_VENUE} upcoming unpaid bookings here. Pay for or cancel one first.`);
   const starts = await startsFor(venue, r, date, durationMin);
   if (!starts.includes(startMin)) throw new BookingError("That time was just taken. Please pick another.");
   const price = priceCents(r.hourly_rate_cents, durationMin);

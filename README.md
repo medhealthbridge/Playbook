@@ -8,24 +8,75 @@ a player area and a venue admin. Initial market: Metro Manila (PHP, Asia/Manila)
 
 ## Run it
 
+Live site: https://playbook.databridgesol.space (Vercel, functions in `sin1`).
+Operating guide for admins, venues and players: the shared *Playbook — Operating Guide* doc.
+
 ```bash
 npm install
 ```
 
 ```bash
-npm run dev        # http://localhost:3000
+cp .env.example .env.local   # then fill in values (see the file for each variable)
 ```
 
 ```bash
-npm test           # booking / payment / entitlement rule checks (22)
+npm run db:migrate           # Better Auth tables + db/schema.sql (idempotent)
 ```
 
 ```bash
-npm run build && npm start
+npm run dev                  # http://localhost:3000
 ```
 
-Routes: `/` (landing + 3D journey), `/demo?role=player`, `/demo?role=venue`.
-"Reset demo data" on `/demo` re-seeds everything.
+### Environments
+
+| Environment | Database (Neon project `green-bird-70481823`) | Where the keys live |
+|---|---|---|
+| Production | branch `main` | Vercel → Production env vars |
+| Development / testing | branch `dev` (copy of `main`'s schema) | `.env.local` (never commit) |
+
+Never point `.env.local` or a test run at the `main` branch. Test accounts always use `@playbook.test` emails, and clean-up deletes only those accounts and their venues.
+
+### Checks
+
+```bash
+npm run lint                 # ESLint (next/core-web-vitals + typescript) and tsc --noEmit
+```
+
+```bash
+npm test                     # pure rules: availability, prices, fees, refunds, queue, webhook signature
+```
+
+End-to-end suites run against a local production build on the dev database (see `tests/qa/README.md`):
+`tests/qa/seed.js`, then `tests/qa/qa.js` (38 checks: auth, roles, tenant isolation, tampered ids, booking
+races, validation, phone layout) and `tests/qa/quality.js` (hold limits, webhook signature, replay window,
+idempotency, cross-venue webhook, security headers).
+
+### Deploy and roll back
+
+Deploy a commit to production from Vercel (or the Vercel API) with target `production`. To roll back,
+promote the previous production deployment in Vercel → Deployments. Schema changes in `db/schema.sql` are
+additive (`IF NOT EXISTS` / `ADD COLUMN IF NOT EXISTS`), so a code rollback does not need a schema rollback.
+Never drop or rename a column in the same release that stops using it (expand → migrate → contract).
+
+### Backups and recovery
+
+- Neon keeps point-in-time history for the project (the window depends on the Neon plan; check it in the Neon console) and manual snapshots can be restored to a new branch. No automatic snapshot schedule is set yet.
+- Restore drill (2026-11-08): snapshot of `main` → restored to branch `restore-drill` → schema and row counts
+  matched production; about 45 seconds end to end.
+- Targets: RPO of minutes within the history window (point-in-time restore), RTO ≤ 30 minutes (restore to a branch, point Vercel's
+  `DATABASE_URL` at it, redeploy).
+- Stored PayMongo keys are encrypted with a key derived from `BETTER_AUTH_SECRET` (or `PAYMONGO_ENC_KEY`).
+  Keep a copy of that secret in a password manager: a restored database is unreadable for payments without it.
+
+### Operations
+
+- Monthly invoices: Vercel Cron calls `/api/cron/invoices` at 01:00 UTC on the 1st (09:00 Manila) with
+  `CRON_SECRET`; re-running never duplicates invoices. Manual run: `/admin → Billing → Create invoices`.
+- PayMongo webhooks: one per venue (`/api/paymongo/webhook/<venueId>`) and one for Playbook invoices
+  (`/api/paymongo/platform`). Signatures and a 5-minute timestamp window are checked; each event id is processed
+  once; a failed event is released so PayMongo's retry is processed.
+- Logs: Vercel → Project → Logs. Webhook failures log `paymongo webhook failed` / `platform webhook failed`.
+- Audit trail of admin and venue actions: `/admin → Audit`.
 
 ## Design in one paragraph
 
@@ -41,38 +92,20 @@ frame around the **PLAYBOOK** wordmark: *Less planning. More playing.* A scorebo
 All readable copy and every control is accessible HTML; the 3D is lazy-loaded and
 never blocks booking.
 
-## What the demo actually does
+## What is live
 
-| Area | Implemented (demo) |
+| Area | Status |
 |---|---|
-| Booking flow | Sport → venue → named court/table/pitch → date, duration, start → review (equipment, full price breakdown, deposit/balance, cancellation policy, recording availability) → simulated checkout → confirmation |
-| Availability rules | Opening hours, booking increments, min/max duration, existing bookings, maintenance blocks, setup buffers, past times. **Basketball and volleyball on Court A share one availability record.** |
-| Holds & payments | 10-minute holds; payment outcome chosen in a visibly simulated checkout (no card fields). Payment status is separate from booking status. Pending/failed never show as confirmed. Idempotent payment events; a late payment for a taken slot becomes **refund due** — never a double booking. "Slot just got taken" can be simulated. |
-| States | Loading, empty availability (with next-day suggestion), invalid date, slot taken, payment failed, pending, hold expired, cancelled, refund due |
-| Player area | Upcoming/past bookings, receipts, invite squad, accept invites (demo), per-person recording access, cancel with policy preview, **Book again** (availability rechecked), notifications, membership switch, highlight library |
-| Venue admin | Day/week calendar across resources, booking detail + venue cancellation (full refund), maintenance blocks, payments ledger with filters, recording workflow (CCTV export or camera upload → processing → ready/failed → cut clip → publish), venue plan, staff roles (Club) |
-| Video rules | Access needs venue video plan + camera on resource, ready footage, published clip, authorised participant, and a plan with highlights; downloads need Replay Plus. Missing footage is reported as missing, not as a plan restriction. Invitations never grant recording access. |
-| Plans | Separate player/venue tabs; names/benefits are proposals; prices show "Pricing to be announced". Changing one plan never changes the other. |
-| Sync | Booking flow, player area and venue admin share one store (`localStorage`), so a demo booking appears in both views instantly (and across tabs). |
-| Motion & a11y | Native scrolling; visible **Reduce motion** toggle (respects `prefers-reduced-motion`); static designed story when motion is reduced or WebGL fails; keyboard-operable dialog/tabs/radios; focus management; labelled errors; no autoplay, no sound |
-| Performance | 3D chunk loaded after first paint (first load JS ≈ 181 kB without three.js); render loop paused off-screen; DPR capped (1.75 desktop / 1.25 mobile); no shadow maps or post-processing; instanced lights/route; fewer props on mobile |
+| Accounts | Email + password (Better Auth), email verification and password reset once Resend is configured, rate-limited sign-in/up, platform admins from `PLATFORM_ADMIN_EMAILS` |
+| Venues | Registration → admin approval → trial; owner / manager / front-desk roles enforced on the server for every action |
+| Bookings | Real availability, 10-minute holds, Postgres exclusion constraint against double booking, pay online (venue's own PayMongo) or at the venue, cancellations and refunds, per-account limits on unpaid holds |
+| Front desk | Calendar, walk-ins, check-in, no-show, blocks, recurring weekly bookings |
+| Open play | Queue, QR join, court rotation, TV board, online or desk fees |
+| Billing | Plans, per-booking fee, monthly invoices (cron), manual or PayMongo invoice payment |
+| Messages | Booking chat, venue news, follows (emails once Resend is configured) |
+| Not built | Venue photos, account deletion / data export, staff invite emails, ownership transfer, recordings/highlights for real venues (homepage clips are labelled demo) |
 
-Highlight "videos" are an original procedural animation captioned **"Demo animation — not real footage"**.
-All venues, prices, people and clips are fictional and labelled as demo data.
-
-## Production integrations still needed
-
-Each has an interface in `src/lib/adapters/interfaces.ts`:
-
-1. **Auth** with server-enforced roles and venue isolation (the role switch is not auth).
-2. **Booking storage** with DB-level conflict prevention (e.g. Postgres exclusion constraint on `(resource_id, tstzrange + buffer)`) and expiring holds.
-3. **Payments** (PSP checkout) confirmed only by **verified, idempotent webhooks**; refunds for late payments.
-4. **Private media storage** with short-lived signed playback/download URLs and per-venue/per-booking isolation.
-5. **Processing jobs** for uploaded footage; **camera/CCTV import** of exported files (no raw feeds exposed).
-6. Notifications (email/SMS/push), real pricing, legal copy (recording notices, privacy, retention).
-
-Future features (not built): recurring reservations, waitlists, split payments, leagues,
-tournament brackets, scorekeeping, coaching, automatic highlight detection.
+The `/demo` routes and homepage previews still use the local demo store and are labelled as demo data.
 
 ## Where to change things
 

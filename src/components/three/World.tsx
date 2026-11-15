@@ -276,7 +276,6 @@ function Box({ args, position, color, emissive, rotation, glow = 1, material }: 
   );
 }
 
-const LIGHT_GLOW = new THREE.Color("#fffbe8").multiplyScalar(4);
 const ROUTE_GLOW = new THREE.Color("#D7FF3F").multiplyScalar(1.8);
 
 // Shared PBR parameter objects (stable identities for usePBR memoisation)

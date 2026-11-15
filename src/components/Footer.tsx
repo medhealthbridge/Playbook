@@ -20,25 +20,25 @@ export function Footer() {
           <div>
             <h4>Players</h4>
             <ul>
-              <li><a href="/#sports">Sports</a></li>
-              <li><a href="/#highlights">Highlights</a></li>
-              <li><a href="/#plans">Plans</a></li>
+              <li><Link href="/#sports">Sports</Link></li>
+              <li><Link href="/#highlights">Highlights</Link></li>
+              <li><Link href="/#plans">Plans</Link></li>
               <li><Link href="/demo?role=player">My bookings (demo)</Link></li>
             </ul>
           </div>
           <div>
             <h4>Venues</h4>
             <ul>
-              <li><a href="/#venues">Venue tools</a></li>
+              <li><Link href="/#venues">Venue tools</Link></li>
               <li><Link href="/demo?role=venue">Venue admin (demo)</Link></li>
             </ul>
           </div>
           <div>
             <h4>Help</h4>
             <ul>
-              <li><a href="/#faq">FAQ</a></li>
-              <li><a href="/#faq">Cancellations</a></li>
-              <li><a href="/#faq">Recordings &amp; privacy</a></li>
+              <li><Link href="/#faq">FAQ</Link></li>
+              <li><Link href="/#faq">Cancellations</Link></li>
+              <li><Link href="/#faq">Recordings &amp; privacy</Link></li>
             </ul>
           </div>
         </div>

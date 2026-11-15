@@ -1,3 +1,4 @@
+import { cache } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
@@ -14,21 +15,23 @@ import { q, q1 } from "@/lib/server/db";
 
 export const dynamic = "force-dynamic";
 
+// One venue lookup per request, shared by the metadata and the page.
+const getVenue = cache((slug: string) => venueBySlug(slug));
+
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
-  const v = await venueBySlug((await params).slug);
+  const v = await getVenue((await params).slug);
   return { title: v ? `${v.name} — Book on Playbook` : "Venue — Playbook" };
 }
 
 export default async function VenuePage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<Record<string, string | undefined>> }) {
   const { slug } = await params;
   const sp = await searchParams;
-  const venue = await venueBySlug(slug);
+  const venue = await getVenue(slug);
   if (!venue || venue.status !== "active") notFound();
   const [resources, session, openPlay, news] = await Promise.all([
     venueResources(venue.id), getSession(), upcomingPublicSessions(venue.id),
     q<{ id: string; title: string; body: string; created_at: string }>("SELECT id, title, body, created_at FROM venue_announcement WHERE venue_id=$1 ORDER BY created_at DESC LIMIT 3", [venue.id]),
   ]);
-  const following = session ? !!(await q1("SELECT 1 FROM venue_follower WHERE venue_id=$1 AND user_id=$2", [venue.id, session.user.id])) : false;
   const sportName = (id: string) => SPORTS.find((s) => s.id === id)?.name ?? id;
   const sports = [...new Set(resources.flatMap((r) => r.sports))];
   const sport = sports.includes(sp.sport ?? "") ? sp.sport! : sports[0];
@@ -38,8 +41,13 @@ export default async function VenuePage({ params, searchParams }: { params: Prom
   const date = dates.includes(sp.date ?? "") ? sp.date! : dates[0];
   const durations = court ? durationsFor(court) : [];
   const dur = durations.includes(Number(sp.dur)) ? Number(sp.dur) : durations[0];
-  await expireHolds();
-  const starts = court ? await startsFor(venue, court, date, dur) : [];
+  // startsFor already ignores expired holds; the clean-up runs alongside (indexed, usually touches 0 rows)
+  // so expired holds don't linger on the venue's calendar or block a walk-in.
+  const [starts, following] = await Promise.all([
+    court ? startsFor(venue, court, date, dur) : Promise.resolve([] as number[]),
+    expireHolds().then(() => null),
+    session ? q1("SELECT 1 FROM venue_follower WHERE venue_id=$1 AND user_id=$2", [venue.id, session.user.id]).then(Boolean) : Promise.resolve(false),
+  ]).then(([s, , f]) => [s, f] as const);
   const link = (o: Record<string, string | number>) => {
     const p = new URLSearchParams({ sport, court: court?.id ?? "", date, dur: String(dur), ...Object.fromEntries(Object.entries(o).map(([k, v]) => [k, String(v)])) });
     return `/venues/${slug}?${p}`;

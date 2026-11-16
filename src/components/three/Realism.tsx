@@ -6,7 +6,6 @@
 import { useFrame, useLoader, useThree } from "@react-three/fiber";
 import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
-import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { HDRLoader } from "three/examples/jsm/loaders/HDRLoader.js";
 import { Reflector } from "three/examples/jsm/objects/Reflector.js";
 import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
@@ -18,8 +17,6 @@ import { basketballTexture } from "./textures";
 export const ASSETS = {
   hdriArena: "/assets/hdri/arena_evening_1k.hdr",
   hdriExterior: "/assets/hdri/exterior_bluehour_512.hdr",
-  bleacher: "/assets/models/bleacher_module.glb",
-  bench: "/assets/models/team_bench.glb",
   lightBeam: "/assets/fx/light_beam.png",
   dust: "/assets/fx/dust_particles.png",
   arenaVideo: "/assets/video/ambient-arena.mp4",
@@ -284,69 +281,6 @@ export function Dust({ count, from, to }: { count: number; from: number; to: num
   );
 }
 
-/** Instanced GLB: one draw call per sub-mesh, however many copies. */
-function useInstancedGLB(url: string, placements: THREE.Matrix4[], shadows: boolean) {
-  const gltf = useLoader(GLTFLoader, url);
-  return useMemo(() => {
-    const group = new THREE.Group();
-    gltf.scene.updateMatrixWorld(true);
-    gltf.scene.traverse((o) => {
-      const mesh = o as THREE.Mesh;
-      if (!mesh.isMesh) return;
-      const inst = new THREE.InstancedMesh(mesh.geometry, mesh.material, placements.length);
-      const m = new THREE.Matrix4();
-      placements.forEach((p, i) => inst.setMatrixAt(i, m.multiplyMatrices(p, mesh.matrixWorld)));
-      inst.instanceMatrix.needsUpdate = true;
-      inst.castShadow = shadows;
-      inst.receiveShadow = shadows;
-      inst.frustumCulled = false;
-      group.add(inst);
-    });
-    return group;
-  }, [gltf, placements, shadows]);
-}
-
-/** Seating bowl: repeated bleacher modules down both sides of the arena. */
-export function Bleachers({ shadows, mobile }: { shadows: boolean; mobile: boolean }) {
-  const placements = useMemo(() => {
-    const out: THREE.Matrix4[] = [];
-    const s = 1.5; // module is 4 m wide at scale 1
-    const step = 4 * s;
-    for (const side of [-1, 1]) {
-      for (let z = -26; z > -196; z -= mobile ? step * 2 : step) {
-        const m = new THREE.Matrix4().compose(
-          new THREE.Vector3(side * 16.6, 0, z),
-          new THREE.Quaternion().setFromEuler(new THREE.Euler(0, side < 0 ? Math.PI / 2 : -Math.PI / 2, 0)),
-          new THREE.Vector3(s, s, s),
-        );
-        out.push(m);
-      }
-    }
-    return out;
-  }, [mobile]);
-  const group = useInstancedGLB(ASSETS.bleacher, placements, shadows);
-  return <primitive object={group} />;
-}
-
-/** Team benches along the main court sidelines. */
-export function Benches({ shadows, cz }: { shadows: boolean; cz: number }) {
-  const placements = useMemo(
-    () =>
-      [-6, 6].flatMap((x) => [
-        new THREE.Matrix4().compose(new THREE.Vector3(x, 0, cz - 9.2), new THREE.Quaternion(), new THREE.Vector3(1, 1, 1)),
-        new THREE.Matrix4().compose(
-          new THREE.Vector3(x, 0, cz + 9.2),
-          new THREE.Quaternion().setFromEuler(new THREE.Euler(0, Math.PI, 0)),
-          new THREE.Vector3(1, 1, 1),
-        ),
-      ]),
-    [cz],
-  );
-  const group = useInstancedGLB(ASSETS.bench, placements, shadows);
-  return <primitive object={group} />;
-}
-
-/** A ball dribbling on centre court — a small sign of life. */
 export function DribbleBall({ position, r = 0.3, shadows }: { position: [number, number, number]; r?: number; shadows: boolean }) {
   const tex = useMemo(() => basketballTexture(), []);
   const ball = useRef<THREE.Mesh>(null);

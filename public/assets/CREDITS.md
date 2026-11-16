@@ -26,7 +26,6 @@ All programmatically generated content is original procedural output from this t
 | `public/assets/models/billiards_cue.glb` | procedural geometry | Python + trimesh | Self-generated, subject to applicable platform terms; not CC0. |
 | `public/assets/models/billiards_lamp.glb` | procedural geometry | Python + trimesh | Self-generated, subject to applicable platform terms; not CC0. |
 | `public/assets/models/billiards_table.glb` | procedural geometry | Python + trimesh | Self-generated, subject to applicable platform terms; not CC0. |
-| `public/assets/models/bleacher_module.glb` | procedural geometry | Python + trimesh | Self-generated, subject to applicable platform terms; not CC0. |
 | `public/assets/models/cones.glb` | procedural geometry | Python + trimesh | Self-generated, subject to applicable platform terms; not CC0. |
 | `public/assets/models/floodlight_pole.glb` | procedural geometry | Python + trimesh | Self-generated, subject to applicable platform terms; not CC0. |
 | `public/assets/models/futsal_ball.glb` | procedural geometry | Python + trimesh | Self-generated, subject to applicable platform terms; not CC0. |
@@ -42,7 +41,6 @@ All programmatically generated content is original procedural output from this t
 | `public/assets/models/sepak_takraw_ball.glb` | procedural geometry | Python + trimesh | Self-generated, subject to applicable platform terms; not CC0. |
 | `public/assets/models/shot_clock.glb` | procedural geometry | Python + trimesh | Self-generated, subject to applicable platform terms; not CC0. |
 | `public/assets/models/table_tennis_table.glb` | procedural geometry | Python + trimesh | Self-generated, subject to applicable platform terms; not CC0. |
-| `public/assets/models/team_bench.glb` | procedural geometry | Python + trimesh | Self-generated, subject to applicable platform terms; not CC0. |
 | `public/assets/models/tennis_set.glb` | procedural geometry | Python + trimesh | Self-generated, subject to applicable platform terms; not CC0. |
 | `public/assets/models/towel_folded.glb` | procedural geometry | Python + trimesh | Self-generated, subject to applicable platform terms; not CC0. |
 | `public/assets/models/volleyball.glb` | procedural geometry | Python + trimesh | Self-generated, subject to applicable platform terms; not CC0. |

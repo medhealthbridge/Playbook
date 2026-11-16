@@ -12,8 +12,6 @@ import { scrollState, smoothstep } from "./timeline";
 import { basketballTexture, fonts, panelTexture } from "./textures";
 import {
   ArenaFloor,
-  Benches,
-  Bleachers,
   DribbleBall,
   Dust,
   EnvironmentSwitcher,
@@ -24,6 +22,7 @@ import {
   useLoopVideo,
   usePBR,
 } from "./Realism";
+import { BadmintonCourt, PickleballCourt, PoolTable, Stands, TeamBenches, VolleyballCourt } from "./Props";
 import { FilmTimeline, GALLERY_CLIPS, HighlightScreen, cropTo169, usePhotoTextures } from "./Gallery";
 import { CeilingLights, CeilingStructure, RibbonBoards, VideoWalls, useLightGrid } from "./ArenaShell";
 
@@ -525,7 +524,7 @@ function Arena({ mobile }: { mobile: boolean }) {
       <LightShafts positions={grid.shafts} />
       <Dust count={mobile ? 450 : 1400} from={-24} to={-185} />
       {/* seating bowl, LED ribbon boards and highlight video walls */}
-      <Bleachers shadows={!mobile} mobile={mobile} />
+      <Stands mobile={mobile} />
       <RibbonBoards />
       <VideoWalls />
       {[-1, 1].map((s) => (
@@ -608,7 +607,7 @@ function PlayWorld({ mobile, timeRef }: { mobile: boolean; timeRef: React.Mutabl
         </group>
       ))}
       <DribbleBall position={[1.6, 0, cz + 1.2]} shadows={!mobile} />
-      <Benches shadows={!mobile} cz={cz} />
+      <TeamBenches cz={cz} />
       <Ball position={[-9.5, 0.3, cz - 2]} r={0.28} />
 
       <Panel position={[3.8, 6, -91]} rotY={-0.3} w={4.2} h={2.1} draw={drawConfirm} />
@@ -617,88 +616,17 @@ function PlayWorld({ mobile, timeRef }: { mobile: boolean; timeRef: React.Mutabl
         <Panel key={s} position={[i % 2 ? 9 : -9, 2.2, -88 - Math.floor(i / 2) * 16]} rotY={i % 2 ? -0.6 : 0.6} w={2.6} h={0.8} draw={sign(s)} bob={0} border="rgba(245,247,240,0.4)" />
       ))}
 
-      {/* billiards table between BOOK and PLAY */}
-      <group position={[-7.5, 0, -70]} rotation={[0, 0.3, 0]} userData={{ caster: true }}>
-        <Box args={[3, 0.8, 1.7]} position={[0, 0.4, 0]} color="#3d2414" />
-        <mesh position={[0, 0.81, 0]} material={felt}>
-          <boxGeometry args={[2.7, 0.04, 1.4]} />
-        </mesh>
-        {[[-1.35, -0.7], [0, -0.72], [1.35, -0.7], [-1.35, 0.7], [0, 0.72], [1.35, 0.7]].map(([x, z], i) => (
-          <mesh key={i} position={[x, 0.84, z]}>
-            <cylinderGeometry args={[0.07, 0.07, 0.02, 12]} />
-            <meshBasicMaterial color="#050806" />
-          </mesh>
-        ))}
-        {Array.from({ length: 10 }).map((_, i) => {
-          const row = i < 1 ? 0 : i < 3 ? 1 : i < 6 ? 2 : 3;
-          const idx = i - [0, 1, 3, 6][row];
-          return (
-            <mesh key={i} position={[0.6 + row * 0.1, 0.87, (idx - row / 2) * 0.115]}>
-              <sphereGeometry args={[0.055, 12, 8]} />
-              <meshStandardMaterial color={["#f5d43b", "#2f5bd3", "#d63a2f", "#6b2fa3", "#f08a2f", "#1f8a4c", "#7a1f1f", "#111", "#f5d43b", "#2f5bd3"][i]} roughness={0.2} />
-            </mesh>
-          );
-        })}
-        <mesh position={[-0.7, 0.87, 0]}>
-          <sphereGeometry args={[0.055, 12, 8]} />
-          <meshStandardMaterial color="#fafaf0" roughness={0.2} />
-        </mesh>
-        <mesh position={[-1.5, 0.95, 0.15]} rotation={[0, 0, Math.PI / 2 - 0.06]}>
-          <cylinderGeometry args={[0.012, 0.02, 1.5, 8]} />
-          <meshStandardMaterial color="#d8b679" />
-        </mesh>
-        <Box args={[2.2, 0.12, 0.4]} position={[0, 2.6, 0]} color="#fff3cf" emissive />
-        <Box args={[0.03, 1.4, 0.03]} position={[0, 3.3, 0]} color="#2b3530" />
+      {/* pool table between BOOK and PLAY */}
+      <group position={[-7.5, 0, -70]} rotation={[0, 0.3, 0]}>
+        <PoolTable felt={felt} />
       </group>
 
+      {/* three side courts beyond the main court, all running the same way */}
+      <PickleballCourt position={[0, 0, -117]} />
       {!mobile && (
         <>
-          {/* volleyball */}
-          <group position={[8.5, 0, -115]}>
-            <Rect x={0} z={0} w={6} d={6} />
-            <Box args={[0.1, 2.5, 0.1]} position={[-3.2, 1.25, 0]} color="#2b3530" />
-            <Box args={[0.1, 2.5, 0.1]} position={[3.2, 1.25, 0]} color="#2b3530" />
-            <mesh position={[0, 2.05, 0]}>
-              <planeGeometry args={[6.4, 0.9, 16, 3]} />
-              <meshBasicMaterial color="#F5F7F0" wireframe transparent opacity={0.6} />
-            </mesh>
-            <mesh position={[0.8, 3.6, 0.6]}>
-              <sphereGeometry args={[0.24, 20, 14]} />
-              <meshStandardMaterial color="#f2efe4" roughness={0.6} />
-            </mesh>
-          </group>
-          {/* badminton */}
-          <group position={[-8.5, 0, -115]}>
-            <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.008, 0]}>
-              <planeGeometry args={[6.1, 6.7]} />
-              <meshStandardMaterial color="#1a5246" roughness={0.9} />
-            </mesh>
-            <Rect x={0} z={0} w={6.1} d={6.7} />
-            <Rect x={0} z={0} w={5.2} d={6.7} />
-            <mesh position={[0, 1.4, 0]}>
-              <planeGeometry args={[6.1, 0.76, 16, 2]} />
-              <meshBasicMaterial color="#F5F7F0" wireframe transparent opacity={0.5} />
-            </mesh>
-            <mesh position={[-0.6, 2.8, 0.5]} rotation={[0.4, 0, 0.6]}>
-              <coneGeometry args={[0.12, 0.25, 12, 1, true]} />
-              <meshBasicMaterial color="#F5F7F0" side={THREE.DoubleSide} />
-            </mesh>
-          </group>
-          {/* pickleball, under the path */}
-          <group position={[0, 0, -117]}>
-            <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.008, 0]}>
-              <planeGeometry args={[6.1, 13.4]} />
-              <meshStandardMaterial color="#1f4f86" roughness={0.85} />
-            </mesh>
-            <Rect x={0} z={0} w={6.1} d={13.4} />
-            <Rect x={0} z={0} w={6.1} d={4.2} color={LIME} />
-            <FloorLine from={[0, -6.7]} to={[0, -2.1]} />
-            <FloorLine from={[0, 2.1]} to={[0, 6.7]} />
-            <mesh position={[0, 0.45, 0]}>
-              <planeGeometry args={[6.4, 0.9, 16, 3]} />
-              <meshBasicMaterial color="#F5F7F0" wireframe transparent opacity={0.5} />
-            </mesh>
-          </group>
+          <BadmintonCourt position={[-8.6, 0, -117]} />
+          <VolleyballCourt position={[8.7, 0, -116.4]} />
         </>
       )}
     </group>
@@ -753,7 +681,7 @@ function ReplayWorld({ mobile, timeRef }: { mobile: boolean; timeRef: React.Muta
   });
   return (
     <group>
-      <RouteMarkers z={-119} />
+      <RouteMarkers z={-107.6} />
       {/* screen gate */}
       <group position={[0, GATE.cy, GATE_Z]}>
         <Box args={[GATE.w + 0.6, 0.3, 0.5]} position={[0, GATE.h / 2 + 0.15, 0]} color="#1b231f" />

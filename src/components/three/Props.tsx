@@ -161,6 +161,7 @@ const WALNUT_DARK = new THREE.MeshStandardMaterial({ color: "#2c180c", roughness
 const POCKET = new THREE.MeshStandardMaterial({ color: "#070908", roughness: 0.9 });
 const BRASS = new THREE.MeshStandardMaterial({ color: "#c9a659", roughness: 0.3, metalness: 0.9 });
 const CUSHION = new THREE.MeshStandardMaterial({ color: "#176a43", roughness: 0.95 });
+const BALL_MAT = new THREE.MeshStandardMaterial({ roughness: 0.12, metalness: 0.05 });
 const BALL_COLOURS = ["#f5d43b", "#2f5bd3", "#d63a2f", "#6b2fa3", "#f08a2f", "#1f8a4c", "#7a1f1f", "#111111", "#f5d43b", "#2f5bd3", "#d63a2f", "#6b2fa3", "#f08a2f", "#1f8a4c", "#7a1f1f"];
 
 /** A 9-foot pool table: turned legs, apron, rails with sights, cushions, six pockets, a racked set and a cue. */
@@ -220,8 +221,24 @@ export function PoolTable({ felt }: { felt: THREE.Material }) {
     const out: V[] = [];
     let n = 0;
     for (let row = 0; row < 5; row++) for (let k = 0; k <= row; k++) out[n++] = [0.62 + row * R * 1.74, y, (k - row / 2) * R * 2.02];
+    out.push([-0.68, y, 0.04]);
     return out;
   }, [y, R]);
+  const balls = useRef<THREE.InstancedMesh>(null);
+  useLayoutEffect(() => {
+    const m = balls.current;
+    if (!m) return;
+    const o = new THREE.Object3D();
+    const c = new THREE.Color();
+    rack.forEach((p, i) => {
+      o.position.set(...p);
+      o.updateMatrix();
+      m.setMatrixAt(i, o.matrix);
+      m.setColorAt(i, c.set(i < 15 ? BALL_COLOURS[i] : "#fbfaf2"));
+    });
+    m.instanceMatrix.needsUpdate = true;
+    if (m.instanceColor) m.instanceColor.needsUpdate = true;
+  }, [rack]);
 
   return (
     <group userData={{ caster: true }}>
@@ -235,16 +252,10 @@ export function PoolTable({ felt }: { felt: THREE.Material }) {
       <mesh geometry={parts.corners} material={WALNUT_DARK} />
       <mesh geometry={parts.pocketGeo} material={POCKET} />
       <mesh geometry={parts.sightGeo} material={BRASS} />
-      {rack.map((p, i) => (
-        <mesh key={i} position={p}>
-          <sphereGeometry args={[R, 18, 12]} />
-          <meshStandardMaterial color={BALL_COLOURS[i]} roughness={0.12} metalness={0.05} />
-        </mesh>
-      ))}
-      <mesh position={[-0.68, y, 0.04]}>
+      {/* the 15 racked balls and the cue ball share one instanced draw */}
+      <instancedMesh ref={balls} args={[undefined, undefined, 16]} material={BALL_MAT}>
         <sphereGeometry args={[R, 18, 12]} />
-        <meshStandardMaterial color="#fbfaf2" roughness={0.12} />
-      </mesh>
+      </instancedMesh>
       {/* cue resting across the near rail */}
       <group position={[-0.95, parts.bedY + 0.085, 0.52]} rotation={[0, 0.5, Math.PI / 2 - 0.035]}>
         <mesh>

@@ -579,6 +579,11 @@ function RouteMarkers({ z }: { z: number }) {
 const BASKET_X = 14 - 1.575;
 const ARC3 = Math.asin(6.6 / 6.75);
 
+/** Pool tables (2.82 x 1.55 m outside the rails): rows 2 m apart, tables 2.2 m apart within a row. */
+const POOL_LAYOUT: [number, number][] = [-6.4, -11.2].flatMap((x) => [-63.6, -67.4, -71.2].map((z) => [x, z] as [number, number]));
+/** Table tennis (2.74 x 1.53 m): one column, 2.8 m between tables end to end of the play area. */
+const TT_LAYOUT: [number, number][] = [-62.6, -67.0, -71.4, -75.8].map((z) => [8.2, z]);
+
 function PlayWorld({ mobile, timeRef }: { mobile: boolean; timeRef: React.MutableRefObject<number> }) {
   const felt = usePBR("felt_billiards", R_FELT, FELT_PARAMS);
   const face = useMemo(() => new THREE.MeshStandardMaterial({ color: "#e4e8df", roughness: 0.45 }), []);
@@ -636,15 +641,16 @@ function PlayWorld({ mobile, timeRef }: { mobile: boolean; timeRef: React.Mutabl
         <Panel key={s} position={[i % 2 ? 9 : -9, 2.2, -88 - Math.floor(i / 2) * 16]} rotY={i % 2 ? -0.6 : 0.6} w={2.6} h={0.8} draw={sign(s)} bob={0} border="rgba(245,247,240,0.4)" />
       ))}
 
-      {/* pool table between BOOK and PLAY */}
-      {/* billiards corner on the left, table tennis on the right */}
-      {(mobile ? [[-7.5, -70, 0.3]] : [[-7.5, -70, 0.3], [-11.6, -66.2, -0.12], [-11.4, -74.6, 0.5]]).map(([x, z, r]) => (
-        <group key={z} position={[x, 0, z]} rotation={[0, r, 0]}>
+      {/* billiards hall on the left: 2 rows of 3 tables, about 2 m of walking room around each */}
+      {POOL_LAYOUT.filter((_, i) => !mobile || i < 3).map(([x, z]) => (
+        <group key={`${x}${z}`} position={[x, 0, z]}>
           <PoolTable felt={felt} />
         </group>
       ))}
-      <TableTennisTable position={[8.2, 0, -69.5]} rotY={0.35} />
-      {!mobile && <TableTennisTable position={[11.8, 0, -73.8]} rotY={-0.2} />}
+      {/* table tennis on the right: 4 tables in a line going into the hall */}
+      {TT_LAYOUT.filter((_, i) => !mobile || i < 2).map(([x, z]) => (
+        <TableTennisTable key={z} position={[x, 0, z]} />
+      ))}
 
       {/* three side courts beyond the main court, all running the same way */}
       <PickleballCourt position={[0, 0, -117]} />

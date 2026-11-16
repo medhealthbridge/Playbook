@@ -4,7 +4,7 @@
 // night), the facade dressing (one lit poster per sport, sign, open glass
 // doors, welcome mat, planters), a car park, food stalls and trees.
 // The whole group is hidden once the camera is well inside the arena.
-import { useFrame, useThree } from "@react-three/fiber";
+import { useFrame, useLoader, useThree } from "@react-three/fiber";
 import { useMemo, useRef } from "react";
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
@@ -267,22 +267,45 @@ function SportPosters() {
   );
 }
 
-function Planter({ position, r = 0.55 }: { position: V; r?: number }) {
+/* ---------------------------------------------------------------- cut-outs */
+
+const PROP = (name: string) => `/assets/props/${name}.webp`;
+export const PROP_IMAGES = ["sedan", "suv", "tree", "planter", "stall-buko", "stall-tusok"].map(PROP);
+
+/**
+ * A photo cut-out standing on the ground: the plane turns about its vertical axis to face the camera,
+ * so it always reads as the picture. Outside is only ever seen from the plaza, which keeps this convincing.
+ * `h` is the height in metres; the width follows the picture. A soft blob shadow sits underneath.
+ */
+function Cutout({ name, position, h, flip = false, shadow = 0.5 }: { name: string; position: V; h: number; flip?: boolean; shadow?: number }) {
+  const tex = useLoader(THREE.TextureLoader, PROP(name));
+  const { camera } = useThree();
+  const ref = useRef<THREE.Group>(null);
+  const mat = useMemo(() => {
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.anisotropy = 8;
+    return new THREE.MeshStandardMaterial({ map: tex, alphaTest: 0.45, roughness: 1, metalness: 0, side: THREE.DoubleSide });
+  }, [tex]);
+  const img = tex.image as { width: number; height: number };
+  const w = (h * img.width) / img.height;
+  useFrame(() => {
+    const g = ref.current;
+    if (g) g.rotation.y = Math.atan2(camera.position.x - g.position.x, camera.position.z - g.position.z);
+  });
   return (
-    <group position={position} userData={{ caster: true }}>
-      <mesh position={[0, 0.4, 0]}>
-        <cylinderGeometry args={[r, r * 0.8, 0.8, 14]} />
-        <meshStandardMaterial color="#2b332f" roughness={0.8} />
+    <group ref={ref} position={position}>
+      <mesh position={[0, h / 2, 0]} scale={[flip ? -1 : 1, 1, 1]} material={mat}>
+        <planeGeometry args={[w, h]} />
       </mesh>
-      {([[0, 1.05, 0, 0.62], [0.28, 0.9, 0.18, 0.4], [-0.3, 0.92, -0.12, 0.42]] as [number, number, number, number][]).map(([x, y, z, s], i) => (
-        <mesh key={i} position={[x, y, z]} scale={s}>
-          <icosahedronGeometry args={[1, 1]} />
-          <meshStandardMaterial color={i ? "#2f7a43" : "#3c8f4f"} roughness={0.9} flatShading />
-        </mesh>
-      ))}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]} scale={[1, 0.45, 1]}>
+        <circleGeometry args={[w * 0.46, 24]} />
+        <meshBasicMaterial map={BLOB} transparent opacity={shadow} depthWrite={false} toneMapped={false} />
+      </mesh>
     </group>
   );
 }
+
+const BLOB = softDisc("rgba(0,0,0,0.85)", "rgba(0,0,0,0)", 0.15);
 
 /** Sign, open glass doors, welcome mat and planters around the entrance. The opening itself stays clear for the camera. */
 function Entrance() {
@@ -343,10 +366,10 @@ function Entrance() {
           </mesh>
         </group>
       )))}
-      <Planter position={[-5.3, 0, -18.7]} r={0.7} />
-      <Planter position={[5.3, 0, -18.7]} r={0.7} />
-      <Planter position={[-3.6, 0, -11.2]} />
-      <Planter position={[3.6, 0, -11.2]} />
+      <Cutout name="planter" position={[-5.3, 0, -18.4]} h={1.9} shadow={0.35} />
+      <Cutout name="planter" position={[5.3, 0, -18.4]} h={1.9} shadow={0.35} flip />
+      <Cutout name="planter" position={[-3.6, 0, -11.2]} h={1.5} shadow={0.35} />
+      <Cutout name="planter" position={[3.6, 0, -11.2]} h={1.5} shadow={0.35} flip />
       {/* dark plinth along the foot of the wall */}
       {[-1, 1].map((s) => (
         <mesh key={s} position={[s * 17, 0.6, -19.9]} material={PLINTH}>
@@ -358,50 +381,6 @@ function Entrance() {
 }
 
 /* ---------------------------------------------------------------- car park */
-
-const TYRE = new THREE.MeshStandardMaterial({ color: "#0c0e0d", roughness: 0.9 });
-const CAR_GLASS = new THREE.MeshStandardMaterial({ color: "#3b4d5a", roughness: 0.1, metalness: 0.3 });
-const HEADLIGHT = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.3, 1.25, 1.1), toneMapped: false });
-const TAILLIGHT = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.2, 0.12, 0.08), toneMapped: false });
-
-function carGeometry(kind: "sedan" | "suv") {
-  const L = kind === "suv" ? 4.5 : 4.3;
-  const h = kind === "suv" ? 0.82 : 0.62;
-  const body = mergeGeometries([
-    box(L, h, 1.82, [0, 0.36 + h / 2, 0]),
-    box(L * 0.2, h * 0.5, 1.7, [L / 2 - 0.25, 0.36 + h * 0.3, 0]),
-  ])!;
-  const cabLen = kind === "suv" ? 2.7 : 2.05;
-  const cabH = kind === "suv" ? 0.62 : 0.52;
-  const cabX = kind === "suv" ? -0.35 : -0.25;
-  const cabin = box(cabLen, cabH, 1.6, [cabX, 0.36 + h + cabH / 2, 0]);
-  const roof = box(cabLen - 0.5, 0.06, 1.5, [cabX, 0.36 + h + cabH + 0.03, 0]);
-  const wheels: THREE.BufferGeometry[] = [];
-  for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
-    const w = new THREE.CylinderGeometry(0.34, 0.34, 0.24, 16);
-    w.rotateX(Math.PI / 2);
-    w.translate(sx * (L / 2 - 0.82), 0.34, sz * 0.86);
-    wheels.push(w);
-  }
-  const head = mergeGeometries([box(0.05, 0.14, 0.34, [L / 2 + 0.01, 0.36 + h * 0.62, -0.62]), box(0.05, 0.14, 0.34, [L / 2 + 0.01, 0.36 + h * 0.62, 0.62])])!;
-  const tail = mergeGeometries([box(0.05, 0.12, 0.3, [-L / 2 - 0.01, 0.36 + h * 0.7, -0.66]), box(0.05, 0.12, 0.3, [-L / 2 - 0.01, 0.36 + h * 0.7, 0.66])])!;
-  return { body, cabin, roof, wheels: mergeGeometries(wheels)!, head, tail };
-}
-
-function Car({ position, rotY, color, kind }: { position: V; rotY: number; color: string; kind: "sedan" | "suv" }) {
-  const g = useMemo(() => carGeometry(kind), [kind]);
-  const paint = useMemo(() => new THREE.MeshStandardMaterial({ color, roughness: 0.35, metalness: 0.15 }), [color]);
-  return (
-    <group position={position} rotation={[0, rotY, 0]} userData={{ caster: true }}>
-      <mesh geometry={g.body} material={paint} />
-      <mesh geometry={g.roof} material={paint} />
-      <mesh geometry={g.cabin} material={CAR_GLASS} />
-      <mesh geometry={g.wheels} material={TYRE} />
-      <mesh geometry={g.head} material={HEADLIGHT} />
-      <mesh geometry={g.tail} material={TAILLIGHT} />
-    </group>
-  );
-}
 
 /** A row of marked bays on the left of the plaza, a parking sign and a few parked cars. */
 function CarPark({ mobile }: { mobile: boolean }) {
@@ -416,12 +395,12 @@ function CarPark({ mobile }: { mobile: boolean }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const stops = useMemo(() => mergeGeometries(bays.map((z) => box(0.18, 0.12, 1.7, [X - LEN / 2 + 0.45, 0.06, z])))!, []); // eslint-disable-line react-hooks/exhaustive-deps
-  const cars: { z: number; color: string; kind: "sedan" | "suv"; flip?: boolean }[] = [
-    { z: 13.2, color: "#d9dde0", kind: "sedan" },
-    { z: 7.8, color: "#b3261e", kind: "suv" },
-    { z: 5.1, color: "#1f3f8a", kind: "sedan", flip: true },
-    { z: -0.3, color: "#2c312f", kind: "suv" },
-    { z: -3.0, color: "#e8b22a", kind: "sedan" },
+  // Every other bay, so neighbouring cut-outs never overlap.
+  const cars: { z: number; kind: "sedan" | "suv"; flip?: boolean }[] = [
+    { z: 13.2, kind: "sedan" },
+    { z: 7.8, kind: "suv", flip: true },
+    { z: 2.4, kind: "sedan", flip: true },
+    { z: -3.0, kind: "suv" },
   ];
   return (
     <group>
@@ -436,7 +415,7 @@ function CarPark({ mobile }: { mobile: boolean }) {
         <meshStandardMaterial color="#c9c9c0" roughness={0.9} />
       </mesh>
       {(mobile ? cars.slice(0, 3) : cars).map((c) => (
-        <Car key={c.z} position={[X + 0.15, 0, c.z]} rotY={c.flip ? 0 : Math.PI} color={c.color} kind={c.kind} />
+        <Cutout key={c.z} name={c.kind} position={[X + 0.4, 0, c.z]} h={c.kind === "suv" ? 2.25 : 1.95} flip={c.flip} />
       ))}
       <group position={[X + LEN / 2 + 0.6, 0, 14.9]}>
         <mesh position={[0, 1.4, 0]} material={FRAME}>
@@ -447,108 +426,6 @@ function CarPark({ mobile }: { mobile: boolean }) {
           <meshBasicMaterial map={sign} toneMapped={false} />
         </mesh>
       </group>
-    </group>
-  );
-}
-
-/* ------------------------------------------------------------- food stalls */
-
-function stripes(a: string, b: string) {
-  const t = canvasTexture(256, 64, (ctx, w, h) => {
-    for (let i = 0; i < 8; i++) {
-      ctx.fillStyle = i % 2 ? a : b;
-      ctx.fillRect((i * w) / 8, 0, w / 8, h);
-    }
-  });
-  return t;
-}
-
-function FoodStall({ position, rotY, name, sub, a, b }: { position: V; rotY: number; name: string; sub: string; a: string; b: string }) {
-  const awning = useMemo(() => stripes(a, b), [a, b]);
-  const board = useMemo(() => textTexture([{ text: name, size: 70, color: "#fff8e6" }, { text: sub, size: 34, color: "#ffd98a", weight: 700 }], 512, 170, a), [name, sub, a]);
-  const frame = useMemo(() => {
-    const g: THREE.BufferGeometry[] = [];
-    for (const sx of [-1, 1]) for (const sz of [-1, 1]) g.push(box(0.07, 2.7, 0.07, [sx * 1.4, 1.35, sz * 0.7]));
-    g.push(box(2.9, 0.07, 0.07, [0, 2.66, 0.7]), box(2.9, 0.07, 0.07, [0, 2.66, -0.7]));
-    return mergeGeometries(g)!;
-  }, []);
-  return (
-    <group position={position} rotation={[0, rotY, 0]} userData={{ caster: true }}>
-      <mesh geometry={frame} material={FRAME} />
-      {/* counter with a timber front and a steel top */}
-      <mesh position={[0, 0.5, 0.55]}>
-        <boxGeometry args={[2.8, 1.0, 0.5]} />
-        <meshStandardMaterial color="#9a6a3c" roughness={0.6} />
-      </mesh>
-      <mesh position={[0, 1.03, 0.55]}>
-        <boxGeometry args={[3.0, 0.06, 0.66]} />
-        <meshStandardMaterial color="#c9ced0" roughness={0.3} metalness={0.8} />
-      </mesh>
-      {/* back shelf */}
-      <mesh position={[0, 1.0, -0.6]}>
-        <boxGeometry args={[2.8, 2.0, 0.12]} />
-        <meshStandardMaterial color="#3a2a1c" roughness={0.8} />
-      </mesh>
-      {/* striped awning, sloping to the front */}
-      <mesh position={[0, 2.62, 0.55]} rotation={[0.32, 0, 0]}>
-        <boxGeometry args={[3.3, 0.05, 2.1]} />
-        <meshStandardMaterial map={awning} roughness={0.85} />
-      </mesh>
-      <mesh position={[0, 2.25, 1.56]}>
-        <planeGeometry args={[3.3, 0.42]} />
-        <meshStandardMaterial map={awning} roughness={0.85} side={THREE.DoubleSide} />
-      </mesh>
-      <mesh position={[0, 3.25, -0.2]}>
-        <planeGeometry args={[2.9, 0.96]} />
-        <meshBasicMaterial map={board} toneMapped={false} side={THREE.DoubleSide} />
-      </mesh>
-      {/* jars and trays on the counter, a string of warm bulbs under the awning */}
-      {[-1.0, -0.45, 0.2, 0.9].map((x, i) => (
-        <mesh key={x} position={[x, 1.2, 0.55]}>
-          <cylinderGeometry args={[0.13, 0.13, 0.28, 10]} />
-          <meshStandardMaterial color={["#e8c15a", "#d8573a", "#f1ead6", "#7ab648"][i]} roughness={0.5} />
-        </mesh>
-      ))}
-      {[-1.2, -0.6, 0, 0.6, 1.2].map((x) => (
-        <mesh key={x} position={[x, 2.3, 1.2]} material={WARM_GLOW}>
-          <sphereGeometry args={[0.055, 8, 6]} />
-        </mesh>
-      ))}
-    </group>
-  );
-}
-
-/* ------------------------------------------------------------------- trees */
-
-const TRUNK = new THREE.MeshStandardMaterial({ color: "#4a3524", roughness: 0.95 });
-const LEAF = [
-  new THREE.MeshStandardMaterial({ color: "#2f7a43", roughness: 0.9, flatShading: true }),
-  new THREE.MeshStandardMaterial({ color: "#256638", roughness: 0.9, flatShading: true }),
-  new THREE.MeshStandardMaterial({ color: "#3d8f4e", roughness: 0.9, flatShading: true }),
-];
-
-function Tree({ position, h = 5, seed = 0 }: { position: V; h?: number; seed?: number }) {
-  const crown = useMemo(() => {
-    const blobs: [number, number, number, number][] = [[0, h, 0, 1.5], [0.9, h - 0.5, 0.3, 1.05], [-0.8, h - 0.3, -0.4, 1.15], [0.1, h + 0.9, -0.2, 1.0]];
-    return blobs.map(([x, y, z, s]) => {
-      const g = new THREE.IcosahedronGeometry(s, 1);
-      g.translate(x, y, z);
-      return g;
-    });
-  }, [h]);
-  return (
-    <group position={position} rotation={[0, seed * 1.7, 0]} userData={{ caster: true }}>
-      <mesh position={[0, h / 2 - 0.4, 0]} material={TRUNK}>
-        <cylinderGeometry args={[0.13, 0.22, h - 0.8, 8]} />
-      </mesh>
-      {crown.map((g, i) => (
-        <mesh key={i} geometry={g} material={LEAF[(i + seed) % 3]} />
-      ))}
-      {/* tree pit */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.011, 0]}>
-        <circleGeometry args={[0.9, 16]} />
-        <meshStandardMaterial color="#3b2f25" roughness={1} />
-      </mesh>
     </group>
   );
 }
@@ -572,10 +449,10 @@ export function Exterior({ mobile }: { mobile: boolean }) {
       <SportPosters />
       <Entrance />
       <CarPark mobile={mobile} />
-      <FoodStall position={[19.2, 0, -10.2]} rotY={-0.55} name="TUSOK-TUSOK" sub="FISHBALL · KWEK-KWEK · ISAW" a="#b3261e" b="#f4ead0" />
-      {!mobile && <FoodStall position={[22.2, 0, -5.4]} rotY={-0.95} name="FRESH BUKO" sub="BUKO JUICE · HALO-HALO" a="#1f7a4c" b="#f4ead0" />}
+      <Cutout name="stall-tusok" position={[18.6, 0, -10.2]} h={3.7} />
+      {!mobile && <Cutout name="stall-buko" position={[22.4, 0, -6.2]} h={3.7} />}
       {(mobile ? trees.slice(0, 5) : trees).map((t, i) => (
-        <Tree key={i} position={t.p} h={t.h} seed={i} />
+        <Cutout key={i} name="tree" position={t.p} h={t.h} flip={i % 2 === 1} shadow={0.4} />
       ))}
       {/* kerb between the car park and the plaza */}
       <mesh position={[-11.9, 0.09, 5.1]}>

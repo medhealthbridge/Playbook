@@ -22,7 +22,8 @@ import {
   useLoopVideo,
   usePBR,
 } from "./Realism";
-import { BadmintonCourt, PickleballCourt, PoolTable, Stands, TeamBenches, VolleyballCourt } from "./Props";
+import { BadmintonCourt, PickleballCourt, PoolTable, Stands, TableTennisTable, TeamBenches, VolleyballCourt } from "./Props";
+import { Exterior, Sky } from "./Exterior";
 import { FilmTimeline, GALLERY_CLIPS, HighlightScreen, cropTo169, usePhotoTextures } from "./Gallery";
 import { CeilingLights, CeilingStructure, RibbonBoards, VideoWalls, useLightGrid } from "./ArenaShell";
 
@@ -464,6 +465,11 @@ function Spot({ position, target }: { position: V; target: V }) {
 }
 
 // ------------------------------------------------------------ scenes
+/** Outdoor half court (10.4 m wide): basket position, three-point radius and the arc's half-angle. */
+const OUT_BASKET_Z = 4.4;
+const OUT_R3 = 4.9;
+const OUT_ARC = Math.asin(4.5 / OUT_R3);
+
 function Courtside({ mobile }: { mobile: boolean }) {
   const ground = usePBR("concrete_polished", R_GROUND, CONCRETE_PARAMS);
   const plaster = usePBR("wall_plaster_white", R_FACADE, PLASTER_PARAMS);
@@ -492,9 +498,14 @@ function Courtside({ mobile }: { mobile: boolean }) {
         <planeGeometry args={[11, 15]} />
       </mesh>
       <Rect x={8} z={11} w={10.4} d={14.4} />
-      <Rect x={8} z={6.4} w={4.2} d={5.2} />
-      <FloorRing x={8} z={9} r={1.8} start={Math.PI} length={Math.PI} />
-      <FloorRing x={8} z={4.6} r={6.2} start={Math.PI} length={Math.PI} />
+      {/* key, free-throw circle, three-point line kept inside the sidelines, no-charge arc, centre circle */}
+      <Rect x={8} z={6.4} w={3.6} d={5.2} />
+      <FloorRing x={8} z={9} r={1.8} />
+      <FloorRing x={8} z={OUT_BASKET_Z} r={OUT_R3} start={Math.PI * 1.5 - OUT_ARC} length={OUT_ARC * 2} />
+      <FloorLine from={[8 - 4.5, 3.8]} to={[8 - 4.5, OUT_BASKET_Z + OUT_R3 * Math.cos(OUT_ARC)]} />
+      <FloorLine from={[8 + 4.5, 3.8]} to={[8 + 4.5, OUT_BASKET_Z + OUT_R3 * Math.cos(OUT_ARC)]} />
+      <FloorRing x={8} z={OUT_BASKET_Z} r={1.0} start={Math.PI} length={Math.PI} />
+      <FloorRing x={8} z={18.2} r={1.8} start={0} length={Math.PI} />
       <Hoop position={[8, 0, 4.1]} facing={0} />
       <Ball position={[2.4, 0.3, 15.8]} />
       {!mobile && <Ball position={[10.5, 0.3, 9]} r={0.28} />}
@@ -564,6 +575,10 @@ function RouteMarkers({ z }: { z: number }) {
   );
 }
 
+/** Basket centre from the middle of a 28 m court, and the half-angle of the three-point arc. */
+const BASKET_X = 14 - 1.575;
+const ARC3 = Math.asin(6.6 / 6.75);
+
 function PlayWorld({ mobile, timeRef }: { mobile: boolean; timeRef: React.MutableRefObject<number> }) {
   const felt = usePBR("felt_billiards", R_FELT, FELT_PARAMS);
   const face = useMemo(() => new THREE.MeshStandardMaterial({ color: "#e4e8df", roughness: 0.45 }), []);
@@ -602,8 +617,13 @@ function PlayWorld({ mobile, timeRef }: { mobile: boolean; timeRef: React.Mutabl
             <meshBasicMaterial color={LIME} transparent opacity={0.16} />
           </mesh>
           <FloorRing x={s * 8.2} z={cz} r={1.8} start={s > 0 ? Math.PI / 2 : -Math.PI / 2} length={Math.PI} />
-          <FloorRing x={s * 12.4} z={cz} r={6.75} start={s > 0 ? Math.PI / 2 + 0.25 : -Math.PI / 2 + 0.25} length={Math.PI - 0.5} />
-          <Hoop position={[s * 13.6, 0, cz]} facing={s > 0 ? -Math.PI / 2 : Math.PI / 2} />
+          {/* three-point line: 6.75 m arc from the basket, straight to the baseline 0.9 m inside each sideline */}
+          <FloorRing x={s * BASKET_X} z={cz} r={6.75} start={(s > 0 ? Math.PI : 0) - ARC3} length={ARC3 * 2} />
+          <FloorLine from={[s * 14, cz - 6.6]} to={[s * (BASKET_X - 6.75 * Math.cos(ARC3)), cz - 6.6]} />
+          <FloorLine from={[s * 14, cz + 6.6]} to={[s * (BASKET_X - 6.75 * Math.cos(ARC3)), cz + 6.6]} />
+          {/* no-charge semicircle under the basket */}
+          <FloorRing x={s * BASKET_X} z={cz} r={1.25} start={s > 0 ? Math.PI / 2 : -Math.PI / 2} length={Math.PI} />
+          <Hoop position={[s * (BASKET_X + 0.2), 0, cz]} facing={s > 0 ? -Math.PI / 2 : Math.PI / 2} />
         </group>
       ))}
       <DribbleBall position={[1.6, 0, cz + 1.2]} shadows={!mobile} />
@@ -617,9 +637,14 @@ function PlayWorld({ mobile, timeRef }: { mobile: boolean; timeRef: React.Mutabl
       ))}
 
       {/* pool table between BOOK and PLAY */}
-      <group position={[-7.5, 0, -70]} rotation={[0, 0.3, 0]}>
-        <PoolTable felt={felt} />
-      </group>
+      {/* billiards corner on the left, table tennis on the right */}
+      {(mobile ? [[-7.5, -70, 0.3]] : [[-7.5, -70, 0.3], [-11.6, -66.2, -0.12], [-11.4, -74.6, 0.5]]).map(([x, z, r]) => (
+        <group key={z} position={[x, 0, z]} rotation={[0, r, 0]}>
+          <PoolTable felt={felt} />
+        </group>
+      ))}
+      <TableTennisTable position={[8.2, 0, -69.5]} rotY={0.35} />
+      {!mobile && <TableTennisTable position={[11.8, 0, -73.8]} rotY={-0.2} />}
 
       {/* three side courts beyond the main court, all running the same way */}
       <PickleballCourt position={[0, 0, -117]} />
@@ -851,12 +876,14 @@ export function World({ mobile }: { mobile: boolean }) {
       <color attach="background" args={[CHAR]} />
       <fog attach="fog" args={[CHAR, 16, 85]} />
       <EnvironmentSwitcher />
+      <Sky mobile={mobile} />
       <hemisphereLight args={["#dfe7e2", "#2a1d12", 0.3]} />
       {mobile ? <directionalLight position={[10, 20, 10]} intensity={0.6} color="#e8efe9" /> : <ShadowRig />}
       {!mobile && <ShadowFlags />}
       {!mobile && <PostFX />}
       <CameraRig mobile={mobile} timeRef={timeRef} />
       <Courtside mobile={mobile} />
+      <Exterior mobile={mobile} />
       <Arena mobile={mobile} />
       <PlayRoute mobile={mobile} timeRef={timeRef} />
       <BookWorld mobile={mobile} />

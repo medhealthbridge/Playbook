@@ -210,7 +210,8 @@ export function PoolTable({ felt }: { felt: THREE.Material }) {
       PW, PD, bedY,
       rails: mergeGeometries(rails)!, cushions: mergeGeometries(cushions)!, corners: mergeGeometries(corners)!, legs: mergeGeometries(legs)!,
       apron: box(PW + rail * 2 - 0.04, 0.24, PD + rail * 2 - 0.04, [0, 0.635, 0]),
-      pockets, sights,
+      pocketGeo: mergeGeometries(pockets.map((p) => new THREE.CylinderGeometry(0.062, 0.05, 0.05, 16).translate(...p)))!,
+      sightGeo: mergeGeometries(sights.map((p) => new THREE.CylinderGeometry(0.011, 0.011, 0.004, 8).translate(...p)))!,
     };
   }, []);
   const R = 0.036; // ball radius, a touch over regulation so the rack reads from the camera path
@@ -232,16 +233,8 @@ export function PoolTable({ felt }: { felt: THREE.Material }) {
       <mesh geometry={parts.cushions} material={CUSHION} />
       <mesh geometry={parts.rails} material={WALNUT} />
       <mesh geometry={parts.corners} material={WALNUT_DARK} />
-      {parts.pockets.map((p, i) => (
-        <mesh key={i} position={p} material={POCKET}>
-          <cylinderGeometry args={[0.062, 0.05, 0.05, 16]} />
-        </mesh>
-      ))}
-      {parts.sights.map((p, i) => (
-        <mesh key={i} position={p} material={BRASS}>
-          <cylinderGeometry args={[0.011, 0.011, 0.004, 8]} />
-        </mesh>
-      ))}
+      <mesh geometry={parts.pocketGeo} material={POCKET} />
+      <mesh geometry={parts.sightGeo} material={BRASS} />
       {rack.map((p, i) => (
         <mesh key={i} position={p}>
           <sphereGeometry args={[R, 18, 12]} />
@@ -447,6 +440,62 @@ export function VolleyballCourt({ position }: { position: V }) {
       <mesh position={[0.9, 3.5, 1.2]}>
         <sphereGeometry args={[0.21, 22, 16]} />
         <meshStandardMaterial color="#f4f0df" roughness={0.55} />
+      </mesh>
+    </group>
+  );
+}
+
+/* ------------------------------------------------------------ table tennis */
+
+const TT_TOP = new THREE.MeshStandardMaterial({ color: "#1d4f9a", roughness: 0.35 });
+const TT_FRAME = new THREE.MeshStandardMaterial({ color: "#1c2220", roughness: 0.45, metalness: 0.7 });
+
+/** A 2.74 x 1.525 m table tennis table, 0.76 m high, with edge and centre lines, a net, two bats and a ball. */
+export function TableTennisTable({ position, rotY = 0 }: { position: V; rotY?: number }) {
+  const g = useMemo(() => {
+    const L = 2.74, W = 1.525, H = 0.76;
+    const lines = mergeGeometries([
+      box(L, 0.004, 0.02, [0, H + 0.002, W / 2 - 0.01]), box(L, 0.004, 0.02, [0, H + 0.002, -W / 2 + 0.01]),
+      box(0.02, 0.004, W, [L / 2 - 0.01, H + 0.002, 0]), box(0.02, 0.004, W, [-L / 2 + 0.01, H + 0.002, 0]),
+      box(L, 0.004, 0.006, [0, H + 0.002, 0]),
+    ])!;
+    const legs: THREE.BufferGeometry[] = [];
+    for (const sx of [-1, 1]) {
+      for (const sz of [-1, 1]) legs.push(box(0.05, H - 0.03, 0.05, [sx * 0.95, (H - 0.03) / 2, sz * 0.6]));
+      legs.push(box(0.05, 0.05, 1.25, [sx * 0.95, 0.2, 0]), box(0.05, 0.05, 1.25, [sx * 0.95, H - 0.06, 0]));
+    }
+    legs.push(box(1.9, 0.05, 0.05, [0, H - 0.06, 0]));
+    // net posts
+    legs.push(box(0.02, 0.17, 0.02, [0, H + 0.085, W / 2 + 0.15]), box(0.02, 0.17, 0.02, [0, H + 0.085, -W / 2 - 0.15]));
+    return { L, W, H, lines, frame: mergeGeometries(legs)! };
+  }, []);
+  const net = useMemo(() => netTexture(60, 4, 0.14), []);
+  return (
+    <group position={position} rotation={[0, rotY, 0]} userData={{ caster: true }}>
+      <mesh position={[0, g.H - 0.0125, 0]} material={TT_TOP}>
+        <boxGeometry args={[g.L, 0.025, g.W]} />
+      </mesh>
+      <mesh geometry={g.lines} material={LINE} />
+      <mesh geometry={g.frame} material={TT_FRAME} />
+      <mesh position={[0, g.H + 0.076, 0]} rotation={[0, Math.PI / 2, 0]}>
+        <planeGeometry args={[g.W + 0.3, 0.1525]} />
+        <meshBasicMaterial map={net} transparent side={THREE.DoubleSide} depthWrite={false} toneMapped={false} />
+      </mesh>
+      {([[-0.9, 0.35, "#c8352b"], [0.95, -0.3, "#1b1f1e"]] as [number, number, string][]).map(([x, z, c]) => (
+        <group key={c} position={[x, g.H + 0.012, z]} rotation={[0, x * 0.9, 0]}>
+          <mesh>
+            <cylinderGeometry args={[0.078, 0.078, 0.012, 20]} />
+            <meshStandardMaterial color={c} roughness={0.7} />
+          </mesh>
+          <mesh position={[0.12, 0, 0]}>
+            <boxGeometry args={[0.1, 0.02, 0.028]} />
+            <meshStandardMaterial color="#b98a55" roughness={0.6} />
+          </mesh>
+        </group>
+      ))}
+      <mesh position={[0.4, g.H + 0.02, 0.2]}>
+        <sphereGeometry args={[0.02, 12, 8]} />
+        <meshStandardMaterial color="#fff7ea" roughness={0.4} />
       </mesh>
     </group>
   );

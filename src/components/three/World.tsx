@@ -24,6 +24,7 @@ import {
 } from "./Realism";
 import { BadmintonCourt, PickleballCourt, PoolTable, Stands, TableTennisTable, TeamBenches, VolleyballCourt } from "./Props";
 import { Exterior, FloodTowers, Sky, useLit } from "./Exterior";
+import { TIER, type Quality } from "./quality";
 import { FilmTimeline, GALLERY_CLIPS, HighlightScreen, cropTo169, usePhotoTextures } from "./Gallery";
 import { CeilingLights, CeilingStructure, RibbonBoards, VideoWalls, useLightGrid } from "./ArenaShell";
 
@@ -581,16 +582,17 @@ function Courtside({ mobile }: { mobile: boolean }) {
   );
 }
 
-function Arena({ mobile }: { mobile: boolean }) {
+function Arena({ mobile, quality }: { mobile: boolean; quality: Quality }) {
+  const tier = TIER[quality];
   const panel = usePBR("panel_acoustic_dark", R_PANEL, PANEL_PARAMS);
   const grid = useLightGrid(mobile);
   return (
     <group>
-      <ArenaFloor quality={mobile ? "low" : "high"} />
+      <ArenaFloor quality={tier.mirror ? "high" : "low"} />
       <CeilingStructure mobile={mobile} />
       <CeilingLights mobile={mobile} positions={grid.all} />
-      <LightShafts positions={grid.shafts} />
-      <Dust count={mobile ? 450 : 1400} from={-24} to={-185} />
+      {tier.shafts && <LightShafts positions={grid.shafts} />}
+      <Dust count={Math.round(1400 * tier.dust)} from={-24} to={-185} />
       {/* seating bowl, LED ribbon boards and highlight video walls */}
       <Stands mobile={mobile} />
       <RibbonBoards />
@@ -932,7 +934,8 @@ function ShadowFlags() {
   return null;
 }
 
-export function World({ mobile }: { mobile: boolean }) {
+export function World({ mobile, quality }: { mobile: boolean; quality: Quality }) {
+  const tier = TIER[quality];
   const timeRef = useRef(scrollState.target);
   return (
     <>
@@ -941,13 +944,13 @@ export function World({ mobile }: { mobile: boolean }) {
       <EnvironmentSwitcher />
       <Sky mobile={mobile} />
       <hemisphereLight args={["#dfe7e2", "#2a1d12", 0.3]} />
-      {mobile ? <directionalLight position={[10, 20, 10]} intensity={0.6} color="#e8efe9" /> : <ShadowRig />}
-      {!mobile && <ShadowFlags />}
-      {!mobile && <PostFX />}
+      {tier.shadows ? <ShadowRig /> : <directionalLight position={[10, 20, 10]} intensity={0.6} color="#e8efe9" />}
+      {tier.shadows && <ShadowFlags />}
+      {tier.bloom && <PostFX />}
       <CameraRig mobile={mobile} timeRef={timeRef} />
       <Courtside mobile={mobile} />
       <Exterior mobile={mobile} />
-      <Arena mobile={mobile} />
+      <Arena mobile={mobile} quality={quality} />
       <PlayRoute mobile={mobile} timeRef={timeRef} />
       <BookWorld mobile={mobile} />
       <PlayWorld mobile={mobile} timeRef={timeRef} />

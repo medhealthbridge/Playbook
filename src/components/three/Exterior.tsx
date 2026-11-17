@@ -5,7 +5,7 @@
 // doors, welcome mat, planters), a car park with 3D cars, 3D food stalls and trees.
 // The whole group is hidden once the camera is well inside the arena.
 import { useFrame, useLoader, useThree } from "@react-three/fiber";
-import { useLayoutEffect, useMemo, useRef } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { sportById } from "@/content/sports";
@@ -581,8 +581,10 @@ function Car({ kind, position, yaw = 0 }: { kind: CarKind; position: V; yaw?: nu
       }),
     [texs],
   );
-  const { camera } = useThree();
+  const { camera, gl } = useThree();
   const board = useRef<THREE.Mesh>(null);
+  // only one view is on the mesh at a time; upload the others now so switching never stalls
+  useEffect(() => texs.forEach((t) => gl.initTexture(t)), [texs, gl]);
   const cos = Math.cos(yaw), sin = Math.sin(yaw);
   useFrame(() => {
     const m = board.current;
@@ -996,8 +998,16 @@ function CarPark({ mobile }: { mobile: boolean }) {
 export function Exterior({ mobile }: { mobile: boolean }) {
   const { camera } = useThree();
   const root = useRef<THREE.Group>(null);
+  const shown = useRef(true);
   useFrame(() => {
-    if (root.current) root.current.visible = camera.position.z > -48;
+    const show = camera.position.z > -48;
+    if (!root.current || show === shown.current) return;
+    shown.current = show;
+    // Hide only what is drawn. Hiding the lights too would change the scene's light count, and
+    // three.js then recompiles every material at once: a visible hitch at the doorway at night.
+    root.current.traverse((o) => {
+      if ((o as THREE.Mesh).isMesh || (o as THREE.Sprite).isSprite || (o as THREE.Points).isPoints) o.visible = show;
+    });
   });
   const trees: { p: V; h: number }[] = [
     { p: [-21.5, 0, 10], h: 5.6 }, { p: [-21.5, 0, 2.5], h: 5 }, { p: [-21.5, 0, -5], h: 6 },

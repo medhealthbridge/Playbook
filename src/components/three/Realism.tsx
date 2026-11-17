@@ -74,6 +74,9 @@ export function usePBR(
 }
 
 /** Image-based lighting: exterior HDRI outside the pavilion, arena HDRI inside. */
+/** Every environment map the switcher can use, so the loading warm-up can compile shaders for each. */
+export const ENV_MAPS = new Set<THREE.Texture>();
+
 export function EnvironmentSwitcher() {
   const { gl, scene, camera } = useThree();
   const [arenaHdr, extHdr] = useLoader(HDRLoader, [ASSETS.hdriArena, ASSETS.hdriExterior]);
@@ -82,6 +85,8 @@ export function EnvironmentSwitcher() {
     const arena = pm.fromEquirectangular(arenaHdr).texture;
     const ext = pm.fromEquirectangular(extHdr).texture;
     pm.dispose();
+    ENV_MAPS.clear();
+    ENV_MAPS.add(arena).add(ext);
     return { arena, ext };
   }, [gl, arenaHdr, extHdr]);
   const charcoal = useMemo(() => new THREE.Color("#101713"), []);
@@ -348,6 +353,19 @@ export function useLoopVideo(src: string, poster: string, isVisible: () => boole
     t.colorSpace = THREE.SRGBColorSpace;
     return t;
   }, [video]);
+  // Fetch the (small) clip in the background a moment after the page is up, so it is ready
+  // before the camera gets there instead of downloading mid-scroll. Skipped on Data Saver.
+  useEffect(() => {
+    const saveData = (navigator as Navigator & { connection?: { saveData?: boolean } }).connection?.saveData;
+    if (!src || saveData) return;
+    const t = window.setTimeout(() => {
+      if (video.preload === "none") {
+        video.preload = "auto";
+        video.load();
+      }
+    }, 2500);
+    return () => window.clearTimeout(t);
+  }, [video, src]);
   useFrame(() => {
     const show = isVisible();
     if (show && video.paused) video.play().catch(() => {});

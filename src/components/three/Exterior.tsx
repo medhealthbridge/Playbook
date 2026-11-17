@@ -2,10 +2,10 @@
 // Everything outside the pavilion: a sky that follows the visitor's clock
 // (sun and clouds by day, warm light at dawn and dusk, moon and stars at
 // night), the facade dressing (one lit poster per sport, sign, open glass
-// doors, welcome mat, planters), a car park, food stalls and trees.
+// doors, welcome mat, planters), a car park with 3D cars, 3D food stalls and trees.
 // The whole group is hidden once the camera is well inside the arena.
 import { useFrame, useLoader, useThree } from "@react-three/fiber";
-import { useMemo, useRef } from "react";
+import { useLayoutEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import { mergeGeometries, mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { sportById } from "@/content/sports";
@@ -279,7 +279,7 @@ function SportPosters() {
 /* ---------------------------------------------------------------- cut-outs */
 
 const PROP = (name: string) => `/assets/props/${name}.webp`;
-export const PROP_IMAGES = ["tree", "planter", "stall-buko", "stall-tusok"].map(PROP);
+export const PROP_IMAGES = ["tree", "planter"].map(PROP);
 
 /**
  * A photo cut-out standing on the ground: the plane turns about its vertical axis to face the camera,
@@ -673,6 +673,325 @@ function Car({ kind, color, position, yaw = 0, lit }: { kind: CarKind; color: st
   );
 }
 
+/* ------------------------------------------------------------- food stalls */
+
+type StallKind = "tusok" | "buko";
+const STALLS: Record<StallKind, { title: string; sub: string; ink: string; stripe: string; frame: string; planks: "v" | "h" }> = {
+  tusok: { title: "TUSOK-TUSOK", sub: "FISHBALL · KWEK-KWEK · ISAW", ink: "#b3201c", stripe: "#c42a24", frame: "#3a4044", planks: "v" },
+  buko: { title: "FRESH BUKO", sub: "BUKO JUICE · HALO-HALO", ink: "#1f6a3a", stripe: "#22703f", frame: "#2d5238", planks: "h" },
+};
+
+/** Sign face: cream board, bold name, smaller menu line, thin inner border in the stall colour. */
+function stallSign(title: string, sub: string, ink: string) {
+  return canvasTexture(1024, 288, (ctx, w, h) => {
+    ctx.fillStyle = "#f4ead2";
+    ctx.fillRect(0, 0, w, h);
+    ctx.strokeStyle = ink;
+    ctx.lineWidth = 8;
+    ctx.strokeRect(18, 18, w - 36, h - 36);
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = ink;
+    ctx.font = `800 128px ${fonts().display}`;
+    ctx.fillText(title, w / 2, h * 0.42, w - 90);
+    ctx.fillStyle = "#2b2a26";
+    ctx.font = `700 50px ${fonts().display}`;
+    ctx.fillText(sub, w / 2, h * 0.78, w - 110);
+  });
+}
+
+/** Awning cloth: cream and colour stripes; `scallop` cuts the hanging edge into half-circles (alpha). */
+function awningTexture(color: string, scallop: boolean) {
+  return canvasTexture(512, scallop ? 96 : 256, (ctx, w, h) => {
+    const n = 10, sw = w / n;
+    for (let i = 0; i < n; i++) {
+      ctx.fillStyle = i % 2 ? "#f1e6cc" : color;
+      ctx.fillRect(i * sw, 0, sw, h);
+    }
+    if (scallop) {
+      ctx.globalCompositeOperation = "destination-out";
+      ctx.fillStyle = "#000";
+      for (let i = 0; i < n; i++) {
+        ctx.beginPath();
+        ctx.ellipse((i + 1) * sw, h, sw / 2, h * 0.42, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalCompositeOperation = "source-over";
+    }
+    // a little fold shading
+    const g = ctx.createLinearGradient(0, 0, 0, h);
+    g.addColorStop(0, "rgba(0,0,0,0)");
+    g.addColorStop(1, "rgba(0,0,0,0.12)");
+    ctx.fillStyle = g;
+    ctx.globalCompositeOperation = "source-atop";
+    ctx.fillRect(0, 0, w, h);
+    ctx.globalCompositeOperation = "source-over";
+  });
+}
+
+function plankTexture(dir: "v" | "h") {
+  return canvasTexture(512, 256, (ctx, w, h) => {
+    const n = dir === "v" ? 12 : 6;
+    let seed = dir === "v" ? 3 : 9;
+    const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    for (let i = 0; i < n; i++) {
+      ctx.fillStyle = `hsl(${27 + rnd() * 6}, ${48 + rnd() * 10}%, ${40 + rnd() * 9}%)`;
+      if (dir === "v") ctx.fillRect((i * w) / n, 0, w / n, h);
+      else ctx.fillRect(0, (i * h) / n, w, h / n);
+      ctx.fillStyle = "rgba(40,20,6,0.55)";
+      if (dir === "v") ctx.fillRect((i * w) / n, 0, 2, h);
+      else ctx.fillRect(0, (i * h) / n, w, 2);
+    }
+    ctx.strokeStyle = "rgba(60,30,10,0.14)";
+    for (let k = 0; k < 90; k++) {
+      ctx.beginPath();
+      if (dir === "v") {
+        const x = rnd() * w;
+        ctx.moveTo(x, 0);
+        ctx.bezierCurveTo(x + 3, h * 0.3, x - 3, h * 0.6, x + 1, h);
+      } else {
+        const y = rnd() * h;
+        ctx.moveTo(0, y);
+        ctx.bezierCurveTo(w * 0.3, y + 2, w * 0.6, y - 2, w, y + 1);
+      }
+      ctx.stroke();
+    }
+  });
+}
+
+const STAINLESS = new THREE.MeshStandardMaterial({ color: "#c9cdcf", roughness: 0.28, metalness: 0.9 });
+const JAR_GLASS = new THREE.MeshPhysicalMaterial({ color: "#e8f2f2", roughness: 0.05, transparent: true, opacity: 0.35 });
+const BULB_OFF = new THREE.MeshStandardMaterial({ color: "#e9e4d6", roughness: 0.15, transparent: true, opacity: 0.8 });
+
+/** Spheres for food piles (fishballs, kwek-kwek, coconuts), one draw call per pile. */
+function Pile({ items, r, color, roughness = 0.7 }: { items: V[]; r: number; color: string; roughness?: number }) {
+  const ref = useRef<THREE.InstancedMesh>(null);
+  useLayoutEffect(() => {
+    const m = new THREE.Matrix4();
+    items.forEach((p, i) => ref.current?.setMatrixAt(i, m.makeTranslation(...p)));
+    if (ref.current) ref.current.instanceMatrix.needsUpdate = true;
+  }, [items]);
+  return (
+    <instancedMesh ref={ref} args={[undefined, undefined, items.length]}>
+      <sphereGeometry args={[r, 12, 9]} />
+      <meshStandardMaterial color={color} roughness={roughness} />
+    </instancedMesh>
+  );
+}
+
+function grid(nx: number, nz: number, step: number, y: number, jitter = 0): V[] {
+  const out: V[] = [];
+  for (let i = 0; i < nx; i++) for (let j = 0; j < nz; j++) out.push([(i - (nx - 1) / 2) * step + ((i * 7 + j * 3) % 5 - 2) * jitter, y, (j - (nz - 1) / 2) * step]);
+  return out;
+}
+
+/**
+ * A street-food stall modelled in 3D, standing on its four feet: steel frame, wooden counter with a
+ * stainless top, striped awning with a scalloped edge, a lit menu board on top, and the food on the counter.
+ * Front faces local +Z. 3 m wide, 1.5 m deep, about 3.6 m to the top of the sign.
+ */
+function Stall({ kind, position, yaw }: { kind: StallKind; position: V; yaw: number }) {
+  const lit = useLit();
+  const S = STALLS[kind];
+  const tex = useMemo(() => {
+    const planks = plankTexture(S.planks);
+    planks.wrapS = planks.wrapT = THREE.RepeatWrapping;
+    return { sign: stallSign(S.title, S.sub, S.ink), cloth: awningTexture(S.stripe, false), valance: awningTexture(S.stripe, true), planks };
+  }, [S]);
+  const frame = useMemo(() => new THREE.MeshStandardMaterial({ color: S.frame, roughness: 0.45, metalness: 0.6 }), [S]);
+  const frameGeo = useMemo(() => {
+    const g: THREE.BufferGeometry[] = [];
+    for (const x of [-1.45, 1.45]) {
+      for (const z of [-0.68, 0.68]) g.push(box(0.07, z > 0 ? 2.2 : 2.78, 0.07, [x, z > 0 ? 1.1 : 1.39, z]));
+      g.push(box(0.05, 0.05, 1.42, [x, 0.08, 0]));
+      g.push(box(0.06, 1.0, 0.06, [x * 0.82, 3.06, -0.68])); // sign posts
+    }
+    g.push(box(2.96, 0.05, 0.05, [0, 0.08, 0.68]), box(2.96, 0.05, 0.05, [0, 0.08, -0.68]));
+    // levelling feet, so it visibly stands on the paving
+    for (const x of [-1.45, 1.45]) for (const z of [-0.68, 0.68]) g.push(box(0.12, 0.03, 0.12, [x, 0.015, z]));
+    return mergeGeometries(g)!;
+  }, []);
+  const bulbs = Array.from({ length: 8 }, (_, i) => -1.26 + i * 0.36);
+  return (
+    <group position={position} rotation={[0, yaw, 0]} userData={{ caster: true }}>
+      <mesh geometry={frameGeo} material={frame} castShadow />
+      {/* counter: wooden front and sides, stainless top */}
+      <mesh position={[0, 0.52, 0.12]} castShadow>
+        <boxGeometry args={[2.86, 0.88, 1.0]} />
+        <meshStandardMaterial map={tex.planks} roughness={0.75} />
+      </mesh>
+      <mesh position={[0, 0.98, 0.16]} material={kind === "tusok" ? STAINLESS : undefined}>
+        <boxGeometry args={[3.0, 0.05, 1.12]} />
+        {kind === "buko" && <meshStandardMaterial color="#b77a45" roughness={0.5} />}
+      </mesh>
+      {/* back panel (so you never see through to the sky) */}
+      <mesh position={[0, 1.7, -0.69]}>
+        <boxGeometry args={[2.86, 1.4, 0.03]} />
+        <meshStandardMaterial color={kind === "tusok" ? "#d8d2c4" : "#e3dccb"} roughness={0.8} />
+      </mesh>
+      {/* awning: sloped cloth, scalloped valance */}
+      <mesh position={[0, 2.56, 0.08]} rotation={[-Math.PI / 2 + 0.36, 0, 0]}>
+        <planeGeometry args={[3.2, 1.75]} />
+        <meshStandardMaterial map={tex.cloth} roughness={0.85} side={THREE.DoubleSide} />
+      </mesh>
+      <mesh position={[0, 2.12, 0.92]}>
+        <planeGeometry args={[3.2, 0.3]} />
+        <meshStandardMaterial map={tex.valance} roughness={0.85} alphaTest={0.5} side={THREE.DoubleSide} />
+      </mesh>
+      {/* menu board on top */}
+      <mesh position={[0, 3.32, -0.66]} material={frame}>
+        <boxGeometry args={[2.9, 0.86, 0.08]} />
+      </mesh>
+      <mesh position={[0, 3.32, -0.615]}>
+        <planeGeometry args={[2.78, 0.76]} />
+        {lit ? <meshBasicMaterial map={tex.sign} color={new THREE.Color(1.05, 1.02, 0.95)} toneMapped={false} /> : <meshStandardMaterial map={tex.sign} roughness={0.6} />}
+      </mesh>
+      {/* lights under the awning: string bulbs or pendant shades */}
+      {kind === "tusok"
+        ? bulbs.map((x) => (
+            <mesh key={x} position={[x, 1.9 - Math.abs(Math.sin(x * 2.2)) * 0.05, 0.62]} material={lit ? WARM_GLOW : BULB_OFF}>
+              <sphereGeometry args={[0.05, 10, 8]} />
+            </mesh>
+          ))
+        : [-0.95, 0, 0.95].map((x) => (
+            <group key={x} position={[x, 1.98, 0.15]}>
+              <mesh position={[0, 0.3, 0]} material={frame}>
+                <cylinderGeometry args={[0.01, 0.01, 0.6, 4]} />
+              </mesh>
+              <mesh material={frame}>
+                <coneGeometry args={[0.17, 0.14, 16, 1, true]} />
+              </mesh>
+              <mesh position={[0, -0.06, 0]} material={lit ? WARM_GLOW : BULB_OFF}>
+                <sphereGeometry args={[0.06, 10, 8]} />
+              </mesh>
+            </group>
+          ))}
+      {kind === "tusok" ? <TusokGoods /> : <BukoGoods />}
+      {lit && <pointLight position={[0, 1.9, 0.6]} intensity={6} distance={6} decay={1.6} color="#ffd9a0" />}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.012, 0.05]}>
+        <planeGeometry args={[3.8, 2.3]} />
+        <meshBasicMaterial map={BLOB} transparent opacity={0.6} depthWrite={false} toneMapped={false} />
+      </mesh>
+    </group>
+  );
+}
+
+/** Fryer with a basket, trays of fishballs and kwek-kwek, a cup of skewers and three sauce jars. */
+function TusokGoods() {
+  const top = 1.005;
+  const fish = useMemo(() => grid(5, 3, 0.075, 0.035, 0.004), []);
+  const kwek = useMemo(() => grid(5, 3, 0.08, 0.04, 0.004), []);
+  return (
+    <group position={[0, top, 0.25]}>
+      <mesh position={[-1.0, 0.13, 0]} material={STAINLESS}>
+        <boxGeometry args={[0.6, 0.26, 0.48]} />
+      </mesh>
+      <mesh position={[-1.0, 0.3, 0]} material={STAINLESS}>
+        <cylinderGeometry args={[0.2, 0.18, 0.1, 20, 1, true]} />
+      </mesh>
+      <mesh position={[-1.0, 0.33, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <circleGeometry args={[0.19, 20]} />
+        <meshStandardMaterial color="#c99a2e" roughness={0.2} metalness={0.2} />
+      </mesh>
+      <mesh position={[-0.82, 0.42, 0.02]} rotation={[0, 0, -0.5]} material={HOUSING}>
+        <cylinderGeometry args={[0.015, 0.015, 0.3, 6]} />
+      </mesh>
+      {[-0.32, 0.18].map((x, i) => (
+        <group key={x} position={[x, 0, 0]}>
+          <mesh position={[0, 0.02, 0]} material={STAINLESS}>
+            <boxGeometry args={[0.44, 0.04, 0.3]} />
+          </mesh>
+          {i === 0 ? <Pile items={fish} r={0.033} color="#efe2c4" /> : <Pile items={kwek} r={0.038} color="#f07a1a" roughness={0.5} />}
+        </group>
+      ))}
+      <mesh position={[0.58, 0.09, 0]} material={STAINLESS}>
+        <cylinderGeometry args={[0.06, 0.06, 0.18, 14]} />
+      </mesh>
+      {Array.from({ length: 9 }, (_, i) => (
+        <mesh key={i} position={[0.58 + Math.cos(i * 2.4) * 0.03, 0.28, Math.sin(i * 2.4) * 0.03]} rotation={[Math.sin(i) * 0.12, 0, Math.cos(i) * 0.12]}>
+          <cylinderGeometry args={[0.004, 0.004, 0.34, 4]} />
+          <meshStandardMaterial color="#d9b77a" roughness={0.8} />
+        </mesh>
+      ))}
+      {["#5a2a12", "#c23a1c", "#e8b9a8"].map((c, i) => (
+        <group key={c} position={[0.82 + i * 0.17, 0, 0]}>
+          <mesh position={[0, 0.07, 0]}>
+            <cylinderGeometry args={[0.055, 0.055, 0.12, 14]} />
+            <meshStandardMaterial color={c} roughness={0.3} />
+          </mesh>
+          <mesh position={[0, 0.1, 0]} material={JAR_GLASS}>
+            <cylinderGeometry args={[0.065, 0.065, 0.2, 14]} />
+          </mesh>
+          <mesh position={[0, 0.21, 0]} material={STAINLESS}>
+            <cylinderGeometry args={[0.067, 0.067, 0.025, 14]} />
+          </mesh>
+        </group>
+      ))}
+    </group>
+  );
+}
+
+/** Crate with a pile of young coconuts, a glass buko-juice dispenser and a halo-halo display case. */
+function BukoGoods() {
+  const top = 1.005;
+  const coconuts = useMemo(() => {
+    const out: V[] = [];
+    const layers: [number, number, number][] = [[4, 2, 0.13], [3, 1, 0.33], [2, 1, 0.52]];
+    layers.forEach(([nx, nz, y]) => {
+      for (let i = 0; i < nx; i++) for (let j = 0; j < nz; j++) out.push([(i - (nx - 1) / 2) * 0.24, y, (j - (nz - 1) / 2) * 0.24]);
+    });
+    return out;
+  }, []);
+  const cups = useMemo(() => grid(3, 2, 0.13, 0, 0), []);
+  return (
+    <group position={[0, top, 0.25]}>
+      <group position={[-0.85, 0, 0]}>
+        <mesh position={[0, 0.06, 0]}>
+          <boxGeometry args={[1.0, 0.12, 0.55]} />
+          <meshStandardMaterial color="#b58a55" roughness={0.85} />
+        </mesh>
+        <Pile items={coconuts} r={0.13} color="#5f9a2c" roughness={0.6} />
+      </group>
+      <group position={[0.15, 0, 0]}>
+        <mesh position={[0, 0.03, 0]} material={STAINLESS}>
+          <cylinderGeometry args={[0.15, 0.15, 0.06, 18]} />
+        </mesh>
+        <mesh position={[0, 0.24, 0]}>
+          <cylinderGeometry args={[0.13, 0.13, 0.34, 18]} />
+          <meshStandardMaterial color="#e9ecd8" roughness={0.3} transparent opacity={0.85} />
+        </mesh>
+        <mesh position={[0, 0.27, 0]} material={JAR_GLASS}>
+          <cylinderGeometry args={[0.15, 0.15, 0.44, 18]} />
+        </mesh>
+        <mesh position={[0, 0.51, 0]} material={JAR_GLASS}>
+          <sphereGeometry args={[0.07, 12, 8]} />
+        </mesh>
+      </group>
+      <group position={[0.82, 0, 0]}>
+        <mesh position={[0, 0.26, 0]} material={JAR_GLASS}>
+          <boxGeometry args={[0.62, 0.52, 0.42]} />
+        </mesh>
+        {[0.03, 0.27].map((y) => (
+          <group key={y} position={[0, y, 0]}>
+            {cups.map((p, i) => (
+              <group key={i} position={p}>
+                <mesh position={[0, 0.07, 0]}>
+                  <cylinderGeometry args={[0.045, 0.035, 0.14, 12]} />
+                  <meshStandardMaterial color={i % 2 ? "#e7b13a" : "#c45a8a"} roughness={0.5} />
+                </mesh>
+                <mesh position={[0, 0.16, 0]}>
+                  <sphereGeometry args={[0.043, 12, 8]} />
+                  <meshStandardMaterial color="#8b5bb8" roughness={0.6} />
+                </mesh>
+              </group>
+            ))}
+          </group>
+        ))}
+      </group>
+    </group>
+  );
+}
+
 /* ---------------------------------------------------------------- car park */
 
 /** A row of marked bays on the left of the plaza, a parking sign and a few parked cars. */
@@ -742,8 +1061,9 @@ export function Exterior({ mobile }: { mobile: boolean }) {
       <SportPosters />
       <Entrance />
       <CarPark mobile={mobile} />
-      <Cutout name="stall-tusok" position={[25.6, 0, -10.6]} h={3.7} />
-      {!mobile && <Cutout name="stall-buko" position={[26.2, 0, -5.2]} h={3.7} />}
+      {/* turned towards the walkway so the menu boards read on the way in */}
+      <Stall kind="tusok" position={[25.4, 0, -10.8]} yaw={-0.75} />
+      {!mobile && <Stall kind="buko" position={[26.4, 0, -5.4]} yaw={-0.95} />}
       {(mobile ? trees.slice(0, 5) : trees).map((t, i) => (
         <Cutout key={i} name="tree" position={t.p} h={t.h} flip={i % 2 === 1} shadow={0.4} />
       ))}

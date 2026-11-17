@@ -36,7 +36,7 @@ whole object in frame with margin, sharp focus, 4k
 
 ## Prompts
 
-### Sedan (car park)
+### Sedan (car park) — short version; full prompts in `docs/CAR_PROMPTS.md`
 ```
 Modern compact 4-door sedan, Philippine city car similar in size to a Toyota Vios,
 smooth rounded body, tinted windows, alloy wheels, headlights and tail lights,

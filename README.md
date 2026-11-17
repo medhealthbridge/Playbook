@@ -69,6 +69,23 @@ Never drop or rename a column in the same release that stops using it (expand �
 - Stored PayMongo keys are encrypted with a key derived from `BETTER_AUTH_SECRET` (or `PAYMONGO_ENC_KEY`).
   Keep a copy of that secret in a password manager: a restored database is unreadable for payments without it.
 
+### One-tap sign-in (Google, Facebook, Apple)
+
+Each button shows on `/login` and `/signup` only when its keys are set in Vercel (Production). The callback URL for
+each provider is `https://playbook.databridgesol.space/api/auth/callback/<google|facebook|apple>`.
+
+| Provider | Where to get keys | Vercel variables |
+|---|---|---|
+| Google | Google Cloud Console → APIs & Services → Credentials → OAuth client ID (Web application). Add the callback URL under Authorised redirect URIs. Publish the OAuth consent screen. | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` |
+| Facebook | developers.facebook.com → Create app → Facebook Login → Valid OAuth Redirect URIs = callback URL. Request the `email` permission; switch the app to Live. | `FACEBOOK_CLIENT_ID` (App ID), `FACEBOOK_CLIENT_SECRET` (App Secret) |
+| Apple | Apple Developer account (paid). Create a Services ID with Sign in with Apple, domain `playbook.databridgesol.space`, return URL = callback URL; create a Sign in with Apple key (.p8). | `APPLE_CLIENT_ID` (Services ID), `APPLE_TEAM_ID`, `APPLE_KEY_ID`, `APPLE_PRIVATE_KEY` (.p8 contents) |
+
+The Apple client secret is signed from the .p8 key at start-up (valid 150 days), so it never needs manual renewal.
+A Google or Apple sign-in with the same verified email joins an existing email account; Facebook does not, because it
+doesn't confirm the email is verified. On sign-up, the Terms and Privacy box must be ticked before any button works;
+on sign-in, the page states that continuing creates an account under the Terms. Either way the agreement is stored in
+`user_consent`.
+
 ### Operations
 
 - Weekly statements: Vercel Cron calls `/api/cron/invoices` at 01:00 UTC every Monday (09:00 Manila) with

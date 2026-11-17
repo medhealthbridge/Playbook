@@ -3624,3 +3624,79 @@ a.sport-card,
 a.sport-card:hover {
   text-decoration: none;
 }
+
+/* ---------------- one-tap sign-in ---------------- */
+.social-block {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+.social-list {
+  display: grid;
+  gap: 8px;
+}
+.social-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 48px;
+  padding: 0 16px;
+  border-radius: var(--radius-sm);
+  font: 600 0.98rem var(--font-body);
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: filter 0.15s var(--ease), transform 0.15s var(--ease);
+}
+.social-btn:hover:not([disabled]) {
+  filter: brightness(0.96);
+}
+.social-btn:active:not([disabled]) {
+  transform: translateY(1px);
+}
+.social-btn[disabled] {
+  cursor: progress;
+  opacity: 0.7;
+}
+.social-btn[aria-disabled="true"] {
+  opacity: 0.55;
+}
+.social-google {
+  background: #ffffff;
+  color: #1f1f1f;
+  border-color: #dadce0;
+}
+.social-facebook {
+  background: #1877f2;
+  color: #ffffff;
+}
+.social-apple {
+  background: #000000;
+  color: #ffffff;
+}
+:root[data-theme="dark"] .social-apple {
+  background: #ffffff;
+  color: #000000;
+}
+.social-legal {
+  margin: 0;
+  text-align: center;
+}
+.social-or {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 0.82rem;
+  margin: 4px 0;
+}
+.social-or::before,
+.social-or::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--line-light);
+}
+.consent-box {
+  margin-bottom: 4px;
+}

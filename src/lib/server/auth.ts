@@ -4,6 +4,7 @@ import { nextCookies } from "better-auth/next-js";
 import { admin } from "better-auth/plugins";
 import { getPool } from "./db";
 import { actionEmail, emailConfigured, sendEmail } from "./email";
+import { socialProviders } from "./social";
 
 /** Bump when the Terms or Privacy Policy text changes. */
 export const POLICY_VERSION = "2026-11";
@@ -19,7 +20,14 @@ export const auth = betterAuth({
   baseURL: process.env.BETTER_AUTH_URL,
   secret: process.env.BETTER_AUTH_SECRET,
   database: getPool(),
-  trustedOrigins: [process.env.BETTER_AUTH_URL, "https://playbook.databridgesol.space"].filter(Boolean) as string[],
+  // Apple posts the sign-in result back from its own domain.
+  trustedOrigins: [process.env.BETTER_AUTH_URL, "https://playbook.databridgesol.space", "https://appleid.apple.com"].filter(Boolean) as string[],
+  socialProviders: socialProviders(),
+  account: {
+    // A Google or Apple sign-in with the same, provider-verified email joins the existing account.
+    // Facebook doesn't confirm that the email is verified, so it is not trusted for linking.
+    accountLinking: { enabled: true, trustedProviders: ["google", "apple"] },
+  },
   emailAndPassword: {
     enabled: true,
     minPasswordLength: 8,
@@ -48,9 +56,13 @@ export const auth = betterAuth({
     user: {
       create: {
         // Emails listed in PLATFORM_ADMIN_EMAILS become platform admins on sign-up.
-        before: async (user) => ({
-          data: { ...user, role: adminEmails().includes(user.email.toLowerCase()) ? "admin" : "user" },
-        }),
+        // Admin by email only for email sign-up (which confirms the address once email is configured)
+        // or a provider that vouches for the email; never on an unverified social email.
+        before: async (user, ctx) => {
+          const viaEmailForm = ctx?.path === "/sign-up/email";
+          const isAdmin = adminEmails().includes(user.email.toLowerCase()) && (viaEmailForm || user.emailVerified === true);
+          return { data: { ...user, role: isAdmin ? "admin" : "user" } };
+        },
         // The sign-up form can't be submitted without both boxes ticked; keep the record of what was agreed to.
         after: async (user) => {
           await getPool()

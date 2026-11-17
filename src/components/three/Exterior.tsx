@@ -7,7 +7,7 @@
 import { useFrame, useLoader, useThree } from "@react-three/fiber";
 import { useMemo, useRef } from "react";
 import * as THREE from "three";
-import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
+import { mergeGeometries, mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { sportById } from "@/content/sports";
 import { GALLERY_CLIPS, usePhotoTextures } from "./Gallery";
 import { canvasTexture, fonts } from "./textures";
@@ -60,6 +60,11 @@ export function currentSkyPhase(): SkyPhase {
   if (h >= 7 && h < 16.75) return "day";
   if ((h >= 5.25 && h < 7) || (h >= 16.75 && h < 18.75)) return "golden";
   return "night";
+}
+
+/** Outdoor lamps (floodlights, bollards, neon trim) are on at dusk and night, off by day. */
+export function useLit() {
+  return useMemo(() => currentSkyPhase() !== "day", []);
 }
 
 function softDisc(inner: string, outer = "rgba(255,255,255,0)", stop = 0.35) {
@@ -200,6 +205,9 @@ const PLINTH = new THREE.MeshStandardMaterial({ color: "#232b27", roughness: 0.8
 const GLASS = new THREE.MeshPhysicalMaterial({ color: "#9fd0d6", roughness: 0.05, metalness: 0, transparent: true, opacity: 0.28 });
 const LIME_GLOW = new THREE.MeshBasicMaterial({ color: new THREE.Color("#D7FF3F").multiplyScalar(1.7), toneMapped: false });
 const WARM_GLOW = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.5, 1.35, 1.0), toneMapped: false });
+// Daytime stand-ins: the same fittings, switched off.
+const WARM_OFF = new THREE.MeshStandardMaterial({ color: "#c9c6bc", roughness: 0.35, metalness: 0.2 });
+const LIME_PAINT = new THREE.MeshStandardMaterial({ color: "#c4e83a", roughness: 0.55 });
 
 function textTexture(lines: { text: string; size: number; color: string; weight?: number }[], w: number, h: number, bg?: string) {
   return canvasTexture(w, h, (ctx) => {
@@ -222,6 +230,7 @@ function textTexture(lines: { text: string; size: number; color: string; weight?
 
 /** One framed, back-lit poster per sport along the front wall, five each side of the entrance. */
 function SportPosters() {
+  const lit = useLit();
   const photos = usePhotoTextures(GALLERY_CLIPS);
   const W = 3.5, H = 4.3;
   const posters = useMemo(
@@ -258,7 +267,7 @@ function SportPosters() {
             <meshBasicMaterial map={p.label} toneMapped={false} />
           </mesh>
           {/* picture light above each frame */}
-          <mesh position={[0, H / 2 + 0.62, 0.22]} material={WARM_GLOW}>
+          <mesh position={[0, H / 2 + 0.62, 0.22]} material={lit ? WARM_GLOW : WARM_OFF}>
             <boxGeometry args={[W * 0.7, 0.05, 0.08]} />
           </mesh>
         </group>
@@ -270,7 +279,7 @@ function SportPosters() {
 /* ---------------------------------------------------------------- cut-outs */
 
 const PROP = (name: string) => `/assets/props/${name}.webp`;
-export const PROP_IMAGES = ["sedan", "suv", "tree", "planter", "stall-buko", "stall-tusok"].map(PROP);
+export const PROP_IMAGES = ["tree", "planter", "stall-buko", "stall-tusok"].map(PROP);
 
 /**
  * A photo cut-out standing on the ground: the plane turns about its vertical axis to face the camera,
@@ -309,6 +318,9 @@ const BLOB = softDisc("rgba(0,0,0,0.85)", "rgba(0,0,0,0)", 0.15);
 
 /** Sign, open glass doors, welcome mat and planters around the entrance. The opening itself stays clear for the camera. */
 function Entrance() {
+  const lit = useLit();
+  const lime = lit ? LIME_GLOW : LIME_PAINT;
+  const warm = lit ? WARM_GLOW : WARM_OFF;
   const sign = useMemo(() => textTexture([{ text: "PLAYBOOK", size: 150, color: "#D7FF3F" }, { text: "BOOK  ·  PLAY  ·  REPLAY", size: 44, color: "#f5f7f0", weight: 700 }], 1024, 300), []);
   const welcome = useMemo(() => textTexture([{ text: "WELCOME  ·  TULOY PO KAYO", size: 62, color: "#151b18" }], 1024, 110, "#D7FF3F"), []);
   const mat = useMemo(() => textTexture([{ text: "WELCOME", size: 120, color: "#151b18" }], 512, 256, "#c8ee3a"), []);
@@ -338,7 +350,7 @@ function Entrance() {
         <group key={s} position={[s * 4.0, 0, -19.9]} rotation={[0, s > 0 ? -1.19 : -1.95, 0]}>
           <mesh geometry={door.frame} material={FRAME} />
           <mesh geometry={door.pane} material={GLASS} />
-          <mesh geometry={door.handle} material={LIME_GLOW} />
+          <mesh geometry={door.handle} material={lime} />
         </group>
       ))}
       {/* runner from the plaza to the door, with a mat at the threshold */}
@@ -347,7 +359,7 @@ function Entrance() {
         <meshStandardMaterial color="#1b4a80" roughness={0.9} />
       </mesh>
       {[-1, 1].map((s) => (
-        <mesh key={s} rotation={[-Math.PI / 2, 0, 0]} position={[s * 2.26, 0.014, -15.4]} material={LIME_GLOW}>
+        <mesh key={s} rotation={[-Math.PI / 2, 0, 0]} position={[s * 2.26, 0.014, -15.4]} material={lime}>
           <planeGeometry args={[0.07, 7.6]} />
         </mesh>
       ))}
@@ -361,7 +373,7 @@ function Entrance() {
           <mesh position={[0, 0.4, 0]} material={FRAME}>
             <cylinderGeometry args={[0.07, 0.07, 0.8, 8]} />
           </mesh>
-          <mesh position={[0, 0.84, 0]} material={WARM_GLOW}>
+          <mesh position={[0, 0.84, 0]} material={warm}>
             <cylinderGeometry args={[0.09, 0.09, 0.1, 8]} />
           </mesh>
         </group>
@@ -372,10 +384,291 @@ function Entrance() {
       <Cutout name="planter" position={[3.6, 0, -11.2]} h={1.5} shadow={0.35} flip />
       {/* dark plinth along the foot of the wall */}
       {[-1, 1].map((s) => (
-        <mesh key={s} position={[s * 17, 0.6, -19.9]} material={PLINTH}>
-          <boxGeometry args={[26, 1.2, 0.24]} />
+        <mesh key={s} position={[s * 17, 0.22, -19.9]} material={PLINTH}>
+          <boxGeometry args={[26, 0.44, 0.24]} />
         </mesh>
       ))}
+    </group>
+  );
+}
+
+/* -------------------------------------------------------------- floodlights */
+
+/** A floodlight face: a grid of LED heads in a dark housing, glowing when on. */
+function ledTexture(on: boolean) {
+  return canvasTexture(256, 128, (ctx, w, h) => {
+    ctx.fillStyle = "#171c1a";
+    ctx.fillRect(0, 0, w, h);
+    const cols = 8, rows = 4;
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const x = (c + 0.5) * (w / cols), y = (r + 0.5) * (h / rows);
+        if (on) {
+          const g = ctx.createRadialGradient(x, y, 0, x, y, 15);
+          g.addColorStop(0, "#ffffff");
+          g.addColorStop(0.55, "#fff6dc");
+          g.addColorStop(1, "rgba(255,240,200,0)");
+          ctx.fillStyle = g;
+        } else {
+          const g = ctx.createRadialGradient(x - 3, y - 3, 1, x, y, 11);
+          g.addColorStop(0, "#8d9592");
+          g.addColorStop(1, "#3a413e");
+          ctx.fillStyle = g;
+        }
+        ctx.beginPath();
+        ctx.arc(x, y, on ? 15 : 11, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  });
+}
+
+const STEEL = new THREE.MeshStandardMaterial({ color: "#8f979b", roughness: 0.45, metalness: 0.75 });
+const HOUSING = new THREE.MeshStandardMaterial({ color: "#2a302d", roughness: 0.6, metalness: 0.5 });
+const FOOTING = new THREE.MeshStandardMaterial({ color: "#a7aaa2", roughness: 0.95 });
+const TOWER_H = 15;
+
+/**
+ * Stadium floodlight masts along the far side of the outdoor court. Each head is a 3 x 2 bank of
+ * LED fixtures tilted down at the court. They switch on at dusk (glow, haze and a real spotlight)
+ * and stay off by day.
+ */
+export function FloodTowers({ mobile, target }: { mobile: boolean; target: [number, number] }) {
+  const lit = useLit();
+  const face = useMemo(() => {
+    const t = ledTexture(lit);
+    return lit
+      ? new THREE.MeshBasicMaterial({ map: t, color: new THREE.Color(2.2, 2.1, 1.9), toneMapped: false })
+      : new THREE.MeshStandardMaterial({ map: t, roughness: 0.3, metalness: 0.3 });
+  }, [lit]);
+  const haze = useMemo(() => softDisc("rgba(255,246,220,0.85)", "rgba(255,240,210,0)", 0.08), []);
+  const head = useMemo(() => {
+    const g: THREE.BufferGeometry[] = [box(4.1, 0.12, 0.12, [0, 1.62, -0.3]), box(4.1, 0.12, 0.12, [0, -0.1, -0.3])];
+    for (const x of [-2, 0, 2]) g.push(box(0.12, 1.84, 0.12, [x, 0.76, -0.3]));
+    return mergeGeometries(g)!;
+  }, []);
+  // Behind each baseline, either side of the court, aimed down its length. The pair at the
+  // building end faces the camera on the way in; the street-end pair is behind it.
+  const [cx, cz] = target;
+  const masts: { p: V; aim: V }[] = [
+    { p: [cx - 7.6, 0, cz - 16.6], aim: [cx - 1.5, 0, cz + 1] },
+    { p: [cx + 7.6, 0, cz - 16.6], aim: [cx + 1.5, 0, cz + 1] },
+    { p: [cx - 7.6, 0, cz + 16.8], aim: [cx - 1.5, 0, cz - 1] },
+    { p: [cx + 7.6, 0, cz + 16.8], aim: [cx + 1.5, 0, cz - 1] },
+  ];
+  return (
+    <group>
+      {(mobile ? masts.slice(0, 2) : masts).map((m) => (
+        <FloodTower key={m.p.join()} position={m.p} aim={m.aim} face={face} head={head} haze={haze} lit={lit} />
+      ))}
+    </group>
+  );
+}
+
+function FloodTower({ position, aim, face, head, haze, lit }: { position: V; aim: V; face: THREE.Material; head: THREE.BufferGeometry; haze: THREE.Texture; lit: boolean }) {
+  const yaw = Math.atan2(aim[0] - position[0], aim[2] - position[2]);
+  const target = useMemo(() => {
+    const o = new THREE.Object3D();
+    o.position.set(...aim);
+    return o;
+  }, [aim]);
+  const top: V = [position[0] + Math.sin(yaw) * 0.6, TOWER_H + 0.8, position[2] + Math.cos(yaw) * 0.6];
+  return (
+    <>
+      <group position={position} rotation={[0, yaw, 0]} userData={{ caster: true }}>
+        <mesh position={[0, 0.3, 0]} material={FOOTING}>
+          <boxGeometry args={[1.3, 0.6, 1.3]} />
+        </mesh>
+        <mesh position={[0, TOWER_H / 2 + 0.6, 0]} material={STEEL}>
+          <cylinderGeometry args={[0.16, 0.3, TOWER_H, 12]} />
+        </mesh>
+        {/* service ladder */}
+        <mesh position={[0, TOWER_H / 2 + 0.6, -0.34]} material={STEEL}>
+          <boxGeometry args={[0.36, TOWER_H - 1, 0.04]} />
+        </mesh>
+        <group position={[0, TOWER_H + 0.1, 0.25]} rotation={[0.42, 0, 0]}>
+          <mesh geometry={head} material={STEEL} />
+          {[0, 1].flatMap((r) =>
+            [-1.35, 0, 1.35].map((fx) => (
+              <group key={`${r}${fx}`} position={[fx, 0.3 + r * 0.92, 0]}>
+                <mesh material={HOUSING}>
+                  <boxGeometry args={[1.25, 0.82, 0.32]} />
+                </mesh>
+                <mesh position={[0, 0, 0.165]} material={face}>
+                  <planeGeometry args={[1.12, 0.7]} />
+                </mesh>
+              </group>
+            )),
+          )}
+        </group>
+      </group>
+      {lit && (
+        <>
+          <sprite position={top} scale={[10, 7, 1]}>
+            <spriteMaterial map={haze} transparent opacity={0.55} depthWrite={false} blending={THREE.AdditiveBlending} toneMapped={false} />
+          </sprite>
+          <primitive object={target} />
+          <spotLight position={top} target={target} angle={0.62} penumbra={0.75} intensity={210} distance={55} decay={1.35} color="#fff4e0" />
+        </>
+      )}
+    </>
+  );
+}
+
+/* ------------------------------------------------------------ facade detail */
+
+const TINT_GLASS = new THREE.MeshPhysicalMaterial({ color: "#1f2c33", roughness: 0.08, metalness: 0.65, envMapIntensity: 1.4 });
+const LIT_GLASS = new THREE.MeshBasicMaterial({ color: new THREE.Color("#ffcf8a").multiplyScalar(0.55), toneMapped: false });
+
+/** Steel pilasters between the posters, a clerestory window band, and a parapet coping, so the wall reads as a building. */
+function FacadeDetail() {
+  const lit = useLit();
+  const pilasters = [4.5, 8.875, 13.425, 17.975, 22.525, 27.1, 29.85].flatMap((x) => [-x, x]);
+  const frame = useMemo(() => {
+    const g: THREE.BufferGeometry[] = [];
+    for (const x of pilasters) g.push(box(0.45, 14.2, 0.42, [x, 7.1, -19.82]));
+    g.push(box(60.6, 0.5, 1.4, [0, 14.2, -20.3])); // coping
+    for (const s of [-1, 1]) {
+      g.push(box(25.2, 0.16, 0.16, [s * 17.2, 9.2, -19.9]), box(25.2, 0.16, 0.16, [s * 17.2, 12.4, -19.9]));
+      for (let x = 4.75; x < 29.8; x += 1.55) g.push(box(0.07, 3.2, 0.1, [s * x, 10.8, -19.92]));
+    }
+    return mergeGeometries(g)!;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return (
+    <group>
+      <mesh geometry={frame} material={FRAME} />
+      {[-1, 1].map((s) => (
+        <mesh key={s} position={[s * 17.2, 10.8, -19.97]} material={lit ? LIT_GLASS : TINT_GLASS}>
+          <planeGeometry args={[25.2, 3.1]} />
+        </mesh>
+      ))}
+    </group>
+  );
+}
+
+/* --------------------------------------------------------------------- cars */
+
+type CarKind = "sedan" | "suv";
+interface CarSpec { body: [number, number][]; arches: [number, number]; wheelR: number; floor: number; glass: [number, number][]; width: number; roof: [number, number, number] }
+
+// Side profiles in metres (x = along the car, nose at +x; y = up). Wheel arches are cut from the bottom edge.
+const CAR_SPECS: Record<CarKind, CarSpec> = {
+  sedan: {
+    floor: 0.3, wheelR: 0.31, arches: [1.33, 0.4], width: 1.72,
+    body: [[2.18, 0.3], [2.28, 0.5], [2.23, 0.72], [1.95, 0.86], [1.1, 0.98], [-1.15, 0.98], [-1.65, 0.97], [-2.15, 0.9], [-2.27, 0.66], [-2.2, 0.3]],
+    glass: [[1.1, 0.97], [0.32, 1.42], [-0.62, 1.43], [-1.18, 0.97]],
+    roof: [0.92, -0.15, 1.43],
+  },
+  suv: {
+    floor: 0.42, wheelR: 0.38, arches: [1.45, 0.47], width: 1.86,
+    body: [[2.36, 0.42], [2.42, 0.76], [2.32, 1.0], [1.62, 1.1], [1.25, 1.16], [-2.3, 1.16], [-2.42, 0.92], [-2.38, 0.42]],
+    glass: [[1.25, 1.15], [0.5, 1.78], [-2.1, 1.8], [-2.33, 1.15]],
+    roof: [2.5, -0.8, 1.8],
+  },
+};
+
+const TYRE = new THREE.MeshStandardMaterial({ color: "#151616", roughness: 0.9 });
+const RIM = new THREE.MeshStandardMaterial({ color: "#c7cbcd", roughness: 0.25, metalness: 0.9 });
+const CAR_GLASS = new THREE.MeshPhysicalMaterial({ color: "#10171c", roughness: 0.05, metalness: 0.5, envMapIntensity: 1.6 });
+const TRIM = new THREE.MeshStandardMaterial({ color: "#101213", roughness: 0.5 });
+const TAIL_OFF = new THREE.MeshStandardMaterial({ color: "#6e1414", roughness: 0.3 });
+const TAIL_ON = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.6, 0.1, 0.08), toneMapped: false });
+const HEAD_OFF = new THREE.MeshStandardMaterial({ color: "#dfe6ea", roughness: 0.1, metalness: 0.6 });
+const carGeoCache = new Map<CarKind, { body: THREE.BufferGeometry; glass: THREE.BufferGeometry; tyre: THREE.BufferGeometry; rim: THREE.BufferGeometry }>();
+
+function carGeometry(kind: CarKind) {
+  const hit = carGeoCache.get(kind);
+  if (hit) return hit;
+  const S = CAR_SPECS[kind];
+  const [ax, ar] = S.arches;
+  const shape = new THREE.Shape();
+  const [first, ...rest] = S.body;
+  // Bottom edge runs from the rear to the nose, hopping over both wheels.
+  shape.moveTo(-first[0], S.floor);
+  shape.lineTo(-ax - ar, S.floor);
+  shape.absarc(-ax, S.floor, ar, Math.PI, 0, true);
+  shape.lineTo(ax - ar, S.floor);
+  shape.absarc(ax, S.floor, ar, Math.PI, 0, true);
+  shape.lineTo(first[0], first[1]);
+  for (const [x, y] of rest) shape.lineTo(x, y);
+  const bevel = 0.09;
+  const body = new THREE.ExtrudeGeometry(shape, { depth: S.width - bevel * 2, bevelEnabled: true, bevelThickness: bevel, bevelSize: 0.07, bevelSegments: 5, curveSegments: 12, steps: 1 });
+  body.translate(0, 0, -(S.width - bevel * 2) / 2);
+  const gShape = new THREE.Shape(S.glass.map(([x, y]) => new THREE.Vector2(x, y)));
+  const gw = S.width - 0.34;
+  const glass = new THREE.ExtrudeGeometry(gShape, { depth: gw - 0.1, bevelEnabled: true, bevelThickness: 0.05, bevelSize: 0.04, bevelSegments: 3 });
+  glass.translate(0, 0, -(gw - 0.1) / 2);
+  // Shape it like a car rather than a slab: sides lean in towards the top, the ends round off
+  // in plan, and the glasshouse narrows towards the roof (tumblehome).
+  const belt = Math.max(...S.body.map((p) => p[1]));
+  const roofY = Math.max(...S.glass.map((p) => p[1]));
+  const len = first[0];
+  const shapeIt = (src: THREE.BufferGeometry, top: (y: number) => number) => {
+    // Weld the extrusion so the paint shades as one smooth surface, not facets.
+    src.deleteAttribute("normal");
+    src.deleteAttribute("uv");
+    const g = mergeVertices(src, 1e-4);
+    const pos = g.attributes.position as THREE.BufferAttribute;
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i), y = pos.getY(i);
+      const end = Math.max(0, (Math.abs(x) / len - 0.72) / 0.28);
+      pos.setZ(i, pos.getZ(i) * top(y) * (1 - 0.2 * end * end));
+    }
+    g.computeVertexNormals();
+    return g;
+  };
+  const bodyGeo = shapeIt(body, (y) => 1 - 0.07 * Math.pow(THREE.MathUtils.clamp((y - S.floor) / (belt - S.floor), 0, 1), 2));
+  const glassGeo = shapeIt(glass, (y) => 1 - 0.22 * THREE.MathUtils.clamp((y - belt) / (roofY - belt), 0, 1));
+  const tyre = new THREE.CylinderGeometry(S.wheelR, S.wheelR, 0.24, 24).rotateX(Math.PI / 2);
+  const rim = new THREE.CylinderGeometry(S.wheelR * 0.62, S.wheelR * 0.62, 0.02, 18).rotateX(Math.PI / 2);
+  const out = { body: bodyGeo, glass: glassGeo, tyre, rim };
+  carGeoCache.set(kind, out);
+  return out;
+}
+
+/** A parked car modelled in 3D: extruded body with rounded edges, tinted glasshouse, wheels and lamps. Sits on the ground. */
+function Car({ kind, color, position, yaw = 0, lit }: { kind: CarKind; color: string; position: V; yaw?: number; lit: boolean }) {
+  const S = CAR_SPECS[kind];
+  const geo = carGeometry(kind);
+  const paint = useMemo(() => new THREE.MeshPhysicalMaterial({ color, roughness: 0.32, metalness: 0.35, clearcoat: 1, clearcoatRoughness: 0.06 }), [color]);
+  const half = S.width / 2;
+  const nose = S.body[0][0];
+  const [rl, rx, ry] = S.roof;
+  return (
+    <group position={position} rotation={[0, yaw, 0]} userData={{ caster: true }}>
+      <mesh geometry={geo.body} material={paint} castShadow />
+      <mesh geometry={geo.glass} material={CAR_GLASS} />
+      <mesh position={[rx, ry, 0]} material={paint}>
+        <boxGeometry args={[rl, 0.05, (S.width - 0.34) * 0.76]} />
+      </mesh>
+      {/* bumpers' black lower trim */}
+      <mesh position={[0, S.floor + 0.06, 0]} material={TRIM}>
+        <boxGeometry args={[nose * 2 + 0.02, 0.12, S.width - 0.06]} />
+      </mesh>
+      {[-1, 1].flatMap((fx) =>
+        [-1, 1].map((sz) => (
+          <group key={`${fx}${sz}`} position={[fx * S.arches[0], S.wheelR, sz * (half - 0.14)]}>
+            <mesh geometry={geo.tyre} material={TYRE} />
+            <mesh geometry={geo.rim} material={RIM} position={[0, 0, sz * 0.12]} />
+          </group>
+        )),
+      )}
+      {[-1, 1].map((sz) => (
+        <group key={sz}>
+          <mesh position={[nose + 0.02, S.floor + (kind === "suv" ? 0.5 : 0.38), sz * (half - 0.3)]} rotation={[0, Math.PI / 2, 0]} material={lit ? WARM_GLOW : HEAD_OFF}>
+            <planeGeometry args={[0.42, 0.13]} />
+          </mesh>
+          <mesh position={[-S.body[S.body.length - 1][0] - 0.04, S.floor + (kind === "suv" ? 0.52 : 0.42), sz * (half - 0.25)]} rotation={[0, -Math.PI / 2, 0]} material={lit ? TAIL_ON : TAIL_OFF}>
+            <planeGeometry args={[0.4, 0.12]} />
+          </mesh>
+        </group>
+      ))}
+      {/* soft contact shadow so it reads as resting on the asphalt */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.015, 0]}>
+        <planeGeometry args={[nose * 2 + 0.7, S.width + 0.7]} />
+        <meshBasicMaterial map={BLOB} transparent opacity={0.75} depthWrite={false} toneMapped={false} />
+      </mesh>
     </group>
   );
 }
@@ -395,27 +688,26 @@ function CarPark({ mobile }: { mobile: boolean }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const stops = useMemo(() => mergeGeometries(bays.map((z) => box(0.18, 0.12, 1.7, [X - LEN / 2 + 0.45, 0.06, z])))!, []); // eslint-disable-line react-hooks/exhaustive-deps
-  // Every other bay, so neighbouring cut-outs never overlap.
-  const cars: { z: number; kind: "sedan" | "suv"; flip?: boolean }[] = [
-    { z: 13.2, kind: "sedan" },
-    { z: 7.8, kind: "suv", flip: true },
-    { z: 2.4, kind: "sedan", flip: true },
-    { z: -3.0, kind: "suv" },
+  const lit = useLit();
+  // Nose-in and nose-out, one bay left free, like a real lot.
+  const cars: { z: number; kind: CarKind; color: string; yaw: number }[] = [
+    { z: 13.2, kind: "sedan", color: "#e9ebe8", yaw: 0 },
+    { z: 10.5, kind: "suv", color: "#2e3336", yaw: Math.PI },
+    { z: 7.8, kind: "sedan", color: "#8c1d1d", yaw: 0 },
+    { z: 2.4, kind: "suv", color: "#e3e1da", yaw: 0 },
+    { z: -0.3, kind: "sedan", color: "#1d3557", yaw: Math.PI },
+    { z: -3.0, kind: "sedan", color: "#9a9ea0", yaw: 0 },
   ];
   return (
     <group>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[X + 1.2, 0.006, 5.1]}>
-        <planeGeometry args={[LEN + 6, bays.length * BAY + 2]} />
-        <meshStandardMaterial color="#22272a" roughness={0.95} />
-      </mesh>
       <mesh geometry={lines}>
         <meshBasicMaterial color="#e9ece6" toneMapped={false} />
       </mesh>
       <mesh geometry={stops}>
         <meshStandardMaterial color="#c9c9c0" roughness={0.9} />
       </mesh>
-      {(mobile ? cars.slice(0, 3) : cars).map((c) => (
-        <Cutout key={c.z} name={c.kind} position={[X + 0.4, 0, c.z]} h={c.kind === "suv" ? 2.25 : 1.95} flip={c.flip} />
+      {(mobile ? cars.slice(0, 4) : cars).map((c) => (
+        <Car key={c.z} kind={c.kind} color={c.color} position={[X + 0.3, 0, c.z]} yaw={c.yaw} lit={lit} />
       ))}
       <group position={[X + LEN / 2 + 0.6, 0, 14.9]}>
         <mesh position={[0, 1.4, 0]} material={FRAME}>
@@ -441,16 +733,17 @@ export function Exterior({ mobile }: { mobile: boolean }) {
   });
   const trees: { p: V; h: number }[] = [
     { p: [-21.5, 0, 10], h: 5.6 }, { p: [-21.5, 0, 2.5], h: 5 }, { p: [-21.5, 0, -5], h: 6 },
-    { p: [18.5, 0, 13], h: 5.4 }, { p: [16.2, 0, 4.5], h: 4.8 },
-    { p: [26, 0, -12], h: 6.2 }, { p: [-27, 0, -13], h: 6 }, { p: [24, 0, 2], h: 5.2 },
+    { p: [27.5, 0, 16], h: 5.4 }, { p: [28.5, 0, 7], h: 4.8 },
+    { p: [30, 0, -14], h: 6.2 }, { p: [-27, 0, -13], h: 6 }, { p: [28, 0, -1.5], h: 5.2 },
   ];
   return (
     <group ref={root}>
+      <FacadeDetail />
       <SportPosters />
       <Entrance />
       <CarPark mobile={mobile} />
-      <Cutout name="stall-tusok" position={[18.6, 0, -10.2]} h={3.7} />
-      {!mobile && <Cutout name="stall-buko" position={[22.4, 0, -6.2]} h={3.7} />}
+      <Cutout name="stall-tusok" position={[25.6, 0, -10.6]} h={3.7} />
+      {!mobile && <Cutout name="stall-buko" position={[26.2, 0, -5.2]} h={3.7} />}
       {(mobile ? trees.slice(0, 5) : trees).map((t, i) => (
         <Cutout key={i} name="tree" position={t.p} h={t.h} flip={i % 2 === 1} shadow={0.4} />
       ))}

@@ -23,7 +23,7 @@ import {
   usePBR,
 } from "./Realism";
 import { BadmintonCourt, PickleballCourt, PoolTable, Stands, TableTennisTable, TeamBenches, VolleyballCourt } from "./Props";
-import { Exterior, Sky } from "./Exterior";
+import { Exterior, FloodTowers, Sky, useLit } from "./Exterior";
 import { FilmTimeline, GALLERY_CLIPS, HighlightScreen, cropTo169, usePhotoTextures } from "./Gallery";
 import { CeilingLights, CeilingStructure, RibbonBoards, VideoWalls, useLightGrid } from "./ArenaShell";
 
@@ -142,6 +142,11 @@ function CameraRig({ mobile, timeRef }: { mobile: boolean; timeRef: React.Mutabl
   const l = useMemo(() => new THREE.Vector3(), []);
   const light = useRef<THREE.PointLight>(null);
   const par = useRef({ x: 0, y: 0 });
+  // Preview aid: ?cam=x,y,z,lookX,lookY,lookZ pins the camera (like ?sky= for the time of day).
+  const pinned = useMemo(() => {
+    const v = new URLSearchParams(window.location.search).get("cam")?.split(",").map(Number);
+    return v && v.length === 6 && v.every(Number.isFinite) ? v : null;
+  }, []);
 
   useLayoutEffect(() => {
     camera.layers.enable(MAIN_ONLY);
@@ -171,6 +176,10 @@ function CameraRig({ mobile, timeRef }: { mobile: boolean; timeRef: React.Mutabl
     const t = performance.now() / 1000;
     p.y += Math.sin(t * 0.55) * 0.035;
     p.x += Math.sin(t * 0.37) * 0.045;
+    if (pinned) {
+      p.set(pinned[0], pinned[1], pinned[2]);
+      l.set(pinned[3], pinned[4], pinned[5]);
+    }
     cam.position.copy(p);
     cam.lookAt(l);
     if (light.current) light.current.position.set(p.x, p.y + 4, p.z - 7);
@@ -279,14 +288,10 @@ function Box({ args, position, color, emissive, rotation, glow = 1, material }: 
 const ROUTE_GLOW = new THREE.Color("#D7FF3F").multiplyScalar(1.8);
 
 // Shared PBR parameter objects (stable identities for usePBR memoisation)
-const CONCRETE_PARAMS = { roughness: 1, color: new THREE.Color("#9aa19c") };
-const PLASTER_PARAMS = { roughness: 1 };
 const ACRYLIC_PARAMS = { roughness: 1 };
 const PANEL_PARAMS = { roughness: 1, color: new THREE.Color("#8d978f") };
 const FELT_PARAMS = { roughness: 1 };
 const R_GROUND: [number, number] = [35, 15];
-const R_FACADE: [number, number] = [8, 4];
-const R_COURT: [number, number] = [5, 7];
 const R_PANEL: [number, number] = [140, 18];
 const R_FELT: [number, number] = [5, 3];
 
@@ -340,12 +345,12 @@ function Ball({ position, r = 0.3 }: { position: V; r?: number }) {
   );
 }
 
-function Hoop({ position, facing }: { position: V; facing: number }) {
-  // facing: rotation around Y so the board faces the court
+function Hoop({ position, facing, reach = 1.2 }: { position: V; facing: number; reach?: number }) {
+  // facing: rotation around Y so the board faces the court; reach: post distance behind the board
   return (
     <group position={position} rotation={[0, facing, 0]} userData={{ caster: true }}>
-      <Box args={[0.18, 3.6, 0.18]} position={[0, 1.8, -1.2]} color="#2b3530" />
-      <Box args={[0.14, 0.14, 1.1]} position={[0, 3.55, -0.65]} color="#2b3530" />
+      <Box args={[0.18, 3.6, 0.18]} position={[0, 1.8, -reach]} color="#2b3530" />
+      <Box args={[0.14, 0.14, reach - 0.1]} position={[0, 3.55, -(reach + 0.1) / 2]} color="#2b3530" />
       <mesh position={[0, 3.5, -0.1]}>
         <boxGeometry args={[1.8, 1.05, 0.05]} />
         <meshStandardMaterial color="#e9f0f3" transparent opacity={0.55} roughness={0.1} />
@@ -454,72 +459,124 @@ const sign = (label: string) => (ctx: CanvasRenderingContext2D, W: number, H: nu
   ctx.textAlign = "left";
 };
 
-function Spot({ position, target }: { position: V; target: V }) {
-  const obj = useMemo(() => new THREE.Object3D(), []);
+// ------------------------------------------------------------ scenes
+/**
+ * Outdoor full court, FIBA markings (28 x 15 m), lengthwise beside the walkway.
+ * Baselines at z = -10 and 18; posts stand 1 m behind each baseline.
+ */
+const CX = 13.5;
+const CZ = 4;
+const HALF_L = 14;
+const HALF_W = 7.5;
+const R3 = 6.75; // three-point radius from the basket centre
+const A3 = Math.asin(6.6 / R3); // corner lines 0.9 m in from the sidelines
+const Z3 = R3 * Math.cos(A3);
+
+/** Markings for one half. e = -1 for the end near the building, +1 for the end near the street. */
+function CourtEnd({ e }: { e: 1 | -1 }) {
+  const zb = CZ + e * HALF_L; // baseline
+  const bz = zb - e * 1.575; // basket centre
+  const zf = zb - e * 5.8; // free-throw line
+  const toCentre = e < 0 ? Math.PI * 1.5 : Math.PI * 0.5; // ring angle pointing at half court
+  const dashes = 7;
+  const seg = Math.PI / (dashes * 2 - 1);
   return (
     <>
-      <primitive object={obj} position={target} />
-      <spotLight position={position} target={obj} angle={0.75} penumbra={0.8} intensity={260} distance={50} decay={1.4} color="#fff3df" />
+      {/* painted key */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[CX, 0.011, zb - e * 2.9]} receiveShadow>
+        <planeGeometry args={[4.9, 5.8]} />
+        <meshStandardMaterial color="#b4463b" roughness={0.85} />
+      </mesh>
+      <Rect x={CX} z={zb - e * 2.9} w={4.9} d={5.8} />
+      {/* free-throw circle: solid half outside the key, dashed half inside */}
+      <FloorRing x={CX} z={zf} r={1.8} start={toCentre - Math.PI / 2} length={Math.PI} />
+      {Array.from({ length: dashes }, (_, i) => (
+        <FloorRing key={i} x={CX} z={zf} r={1.8} start={toCentre + Math.PI / 2 + i * 2 * seg} length={seg} />
+      ))}
+      {/* three-point line */}
+      <FloorRing x={CX} z={bz} r={R3} start={toCentre - A3} length={A3 * 2} />
+      <FloorLine from={[CX - 6.6, zb]} to={[CX - 6.6, bz - e * Z3]} />
+      <FloorLine from={[CX + 6.6, zb]} to={[CX + 6.6, bz - e * Z3]} />
+      {/* no-charge semicircle */}
+      <FloorRing x={CX} z={bz} r={1.25} start={toCentre - Math.PI / 2} length={Math.PI} />
+      <FloorLine from={[CX - 1.25, bz]} to={[CX - 1.25, bz + e * 0.375]} />
+      <FloorLine from={[CX + 1.25, bz]} to={[CX + 1.25, bz + e * 0.375]} />
+      <Hoop position={[CX, 0, bz + e * 0.2]} facing={e < 0 ? 0 : Math.PI} reach={2.375} />
     </>
   );
 }
 
-// ------------------------------------------------------------ scenes
-/** Outdoor half court (10.4 m wide): basket position, three-point radius and the arc's half-angle. */
-const OUT_BASKET_Z = 4.4;
-const OUT_R3 = 4.9;
-const OUT_ARC = Math.asin(4.5 / OUT_R3);
+const ASPHALT_PARAMS = { roughness: 1 };
+const PAVER_PARAMS = { roughness: 1 };
+const BRICK_PARAMS = { roughness: 1 };
+const CLAD_PARAMS = { roughness: 1 };
+const R_PLAZA: [number, number] = [26, 4.7];
+const R_WALK: [number, number] = [4.25, 22.8];
+const R_BRICK: [number, number] = [22.4, 2.2];
+const R_CLAD: [number, number] = [5.4, 2.4];
+const R_CLAD_MID: [number, number] = [1.67, 1.63];
+const R_COURT_FULL: [number, number] = [7, 13];
 
 function Courtside({ mobile }: { mobile: boolean }) {
-  const ground = usePBR("concrete_polished", R_GROUND, CONCRETE_PARAMS);
-  const plaster = usePBR("wall_plaster_white", R_FACADE, PLASTER_PARAMS);
-  const acrylic = usePBR("court_acrylic_blue", R_COURT, ACRYLIC_PARAMS);
+  const lit = useLit();
+  const ground = usePBR("asphalt", R_GROUND, ASPHALT_PARAMS);
+  const plaza = usePBR("pavers_concrete", R_PLAZA, PAVER_PARAMS);
+  const walk = usePBR("pavers_concrete", R_WALK, PAVER_PARAMS);
+  const brick = usePBR("brick_wall", R_BRICK, BRICK_PARAMS);
+  const clad = usePBR("facade_panels", R_CLAD, CLAD_PARAMS);
+  const cladMid = usePBR("facade_panels", R_CLAD_MID, CLAD_PARAMS);
+  const acrylic = usePBR("court_acrylic_blue", R_COURT_FULL, ACRYLIC_PARAMS);
   return (
     <group>
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 10]} material={ground} receiveShadow>
         <planeGeometry args={[140, 60]} />
       </mesh>
-      {/* Pavilion facade with entrance */}
-      <Box args={[26, 14, 1]} position={[-17, 7, -20.5]} material={plaster} />
-      <Box args={[26, 14, 1]} position={[17, 7, -20.5]} material={plaster} />
-      <Box args={[8, 7.8, 1]} position={[0, 10.1, -20.5]} material={plaster} />
-      {/* lime door frame */}
-      <Box args={[0.18, 6.2, 0.2]} position={[-4.05, 3.1, -19.95]} color={LIME} emissive glow={2} />
-      <Box args={[0.18, 6.2, 0.2]} position={[4.05, 3.1, -19.95]} color={LIME} emissive glow={2} />
-      <Box args={[8.3, 0.18, 0.2]} position={[0, 6.2, -19.95]} color={LIME} emissive glow={2} />
-      {/* canopy + downlight strip */}
-      <Box args={[22, 0.4, 5]} position={[0, 8.6, -17.6]} color="#1a221e" />
-      <Box args={[20, 0.05, 0.3]} position={[0, 8.38, -15.6]} color="#fffbe8" emissive glow={3} />
-      {/* fascia stripe */}
-      <Box args={[52, 0.25, 0.1]} position={[0, 13.2, -19.95]} color={LIME} emissive glow={2} />
-
-      {/* outdoor practice court */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[8, 0.008, 11]} material={acrylic} receiveShadow>
-        <planeGeometry args={[11, 15]} />
+      {/* paved forecourt along the facade, and the walkway out to the street */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[9.15, 0.004, -16.25]} material={plaza} receiveShadow>
+        <planeGeometry args={[41.7, 7.5]} />
       </mesh>
-      <Rect x={8} z={11} w={10.4} d={14.4} />
-      {/* key, free-throw circle, three-point line kept inside the sidelines, no-charge arc, centre circle */}
-      <Rect x={8} z={6.4} w={3.6} d={5.2} />
-      <FloorRing x={8} z={9} r={1.8} />
-      <FloorRing x={8} z={OUT_BASKET_Z} r={OUT_R3} start={Math.PI * 1.5 - OUT_ARC} length={OUT_ARC * 2} />
-      <FloorLine from={[8 - 4.5, 3.8]} to={[8 - 4.5, OUT_BASKET_Z + OUT_R3 * Math.cos(OUT_ARC)]} />
-      <FloorLine from={[8 + 4.5, 3.8]} to={[8 + 4.5, OUT_BASKET_Z + OUT_R3 * Math.cos(OUT_ARC)]} />
-      <FloorRing x={8} z={OUT_BASKET_Z} r={1.0} start={Math.PI} length={Math.PI} />
-      <FloorRing x={8} z={18.2} r={1.8} start={0} length={Math.PI} />
-      <Hoop position={[8, 0, 4.1]} facing={0} />
-      <Ball position={[2.4, 0.3, 15.8]} />
-      {!mobile && <Ball position={[10.5, 0.3, 9]} r={0.28} />}
-
-      {/* light poles */}
-      {([[-9, 6], [15, -6]] as [number, number][]).map(([x, z], i) => (
-        <group key={i} position={[x, 0, z]}>
-          <Box args={[0.25, 11, 0.25]} position={[0, 5.5, 0]} color="#2b3530" />
-          <Box args={[2.2, 0.5, 0.6]} position={[0, 11, 0]} color="#fffbe8" emissive glow={4} />
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.004, 5.75]} material={walk} receiveShadow>
+        <planeGeometry args={[6.8, 36.5]} />
+      </mesh>
+      {[-1, 1].map((s) => (
+        <Box key={s} args={[0.22, 0.14, 36.5]} position={[s * 3.5, 0.07, 5.75]} color="#b9bdb4" />
+      ))}
+      {/* Pavilion facade: face-brick base, fibre-cement cladding above */}
+      {[-1, 1].map((s) => (
+        <group key={s}>
+          <Box args={[26, 2.6, 1]} position={[s * 17, 1.3, -20.5]} material={brick} />
+          <Box args={[26, 11.4, 1]} position={[s * 17, 8.3, -20.5]} material={clad} />
         </group>
       ))}
-      <Spot position={[-9, 11, 6]} target={[0, 0, -10]} />
-      <Spot position={[15, 11, -6]} target={[6, 0, 8]} />
-      <pointLight position={[0, 5, -26]} intensity={55} distance={26} decay={1.5} color="#ffe2b8" />
+      <Box args={[8, 7.8, 1]} position={[0, 10.1, -20.5]} material={cladMid} />
+      {/* lime door frame (neon after dark, painted by day) */}
+      <Box args={[0.18, 6.2, 0.2]} position={[-4.05, 3.1, -19.95]} color={LIME} emissive={lit} glow={2} />
+      <Box args={[0.18, 6.2, 0.2]} position={[4.05, 3.1, -19.95]} color={LIME} emissive={lit} glow={2} />
+      <Box args={[8.3, 0.18, 0.2]} position={[0, 6.2, -19.95]} color={LIME} emissive={lit} glow={2} />
+      {/* canopy + downlight strip */}
+      <Box args={[22, 0.4, 5]} position={[0, 8.6, -17.6]} color="#1a221e" />
+      <Box args={[20, 0.05, 0.3]} position={[0, 8.38, -15.6]} color={lit ? "#fffbe8" : "#8c8f88"} emissive={lit} glow={3} />
+      {/* fascia stripe */}
+      <Box args={[52, 0.25, 0.1]} position={[0, 13.2, -19.95]} color={LIME} emissive={lit} glow={2} />
+
+      {/* outdoor full court: green run-off, blue playing area */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[CX, 0.006, CZ]} receiveShadow>
+        <planeGeometry args={[HALF_W * 2 + 3, HALF_L * 2 + 4]} />
+        <meshStandardMaterial color="#3d7656" roughness={0.85} />
+      </mesh>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[CX, 0.008, CZ]} material={acrylic} receiveShadow>
+        <planeGeometry args={[HALF_W * 2, HALF_L * 2]} />
+      </mesh>
+      <Rect x={CX} z={CZ} w={HALF_W * 2} d={HALF_L * 2} />
+      <FloorLine from={[CX - HALF_W, CZ]} to={[CX + HALF_W, CZ]} />
+      <FloorRing x={CX} z={CZ} r={1.8} />
+      <CourtEnd e={-1} />
+      <CourtEnd e={1} />
+      <Ball position={[2.4, 0.3, 15.8]} />
+      {!mobile && <Ball position={[11.2, 0.3, 9.5]} r={0.28} />}
+
+      <FloodTowers mobile={mobile} target={[CX, CZ]} />
+      {lit && <pointLight position={[0, 5, -26]} intensity={55} distance={26} decay={1.5} color="#ffe2b8" />}
     </group>
   );
 }

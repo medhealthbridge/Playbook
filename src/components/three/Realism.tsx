@@ -29,7 +29,11 @@ export type PBRName =
   | "court_acrylic_blue"
   | "panel_acoustic_dark"
   | "felt_billiards"
-  | "wall_plaster_white";
+  | "wall_plaster_white"
+  | "asphalt"
+  | "pavers_concrete"
+  | "brick_wall"
+  | "facade_panels";
 
 const pbrUrls = (n: PBRName) => [
   `/assets/textures/${n}/${n}_basecolor.jpg`,

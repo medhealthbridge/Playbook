@@ -116,6 +116,52 @@ table tennis bat and ball; futsal ball and goal; tennis racket and ball;
 padel racket and ball by the glass wall; sepak takraw ball.
 Save them as `public/assets/sports/<sport>.jpg`, 1024 × 1024 or larger.
 
+## Surface materials (seamless textures)
+
+The ground, walls and court now use texture sets made by
+`scripts/make_exterior_textures.py`. Generate better ones with these prompts in any
+image generator that can make **seamless / tileable** images (Midjourney `--tile`,
+Leonardo "tiling", Stable Diffusion with a tiling option, Adobe Firefly "texture").
+
+Add this to every material prompt:
+
+```
+seamless tileable texture, perfectly flat top-down orthographic view, no perspective,
+even diffuse lighting, no shadows, no highlights, no vignette, no objects, no text,
+photographic detail, square 1:1, 2048 x 2048
+```
+
+| File to replace | Real size of one tile | Prompt |
+|---|---|---|
+| `textures/asphalt/asphalt_basecolor.jpg` | 4 m x 4 m | Weathered dark grey asphalt road surface, fine black aggregate with scattered light grey stones, faint tyre wear, a few hairline cracks |
+| `textures/pavers_concrete/pavers_concrete_basecolor.jpg` | 1.6 m x 1.6 m | Light grey rectangular concrete paving bricks in a running-bond pattern, 20 x 10 cm bricks, thin sand joints, slight colour variation brick to brick |
+| `textures/brick_wall/brick_wall_basecolor.jpg` | 1.2 m x 1.2 m | Dark charcoal-grey face brick wall, stretcher bond, light grey mortar joints, slight texture and colour variation |
+| `textures/facade_panels/facade_panels_basecolor.jpg` | 4.8 m x 4.8 m (2 x 4 panels) | Modern building facade of large off-white fibre-cement panels, 2.4 x 1.2 m each, 2 columns by 4 rows, thin dark recessed shadow joints, tiny screw fixings near the corners |
+| `textures/court_acrylic_blue/court_acrylic_blue_basecolor.jpg` | 2 m x 2 m | Blue acrylic sports court surface, fine sandy grain texture, matte, no lines |
+
+Normal and ORM maps: the easiest route is to drop the base colour into a free
+map maker (Materialize, NormalMap-Online, or Adobe Substance Sampler) and export
+**Normal (OpenGL)** plus **AO, Roughness and Metallic**. Pack AO into red,
+roughness into green and metallic (black) into blue, saved as `<name>_orm.jpg`.
+Or send the base colour images and I will make the other two maps.
+
+## Floodlight tower (outdoor court)
+
+```
+Stadium floodlight mast for an outdoor basketball court, tall galvanised steel pole
+with a service ladder, head frame holding six rectangular LED flood lights in two rows,
+lights tilted slightly down, concrete footing, 16 m tall, head 4 m wide.
+Under 8,000 triangles
+```
+The light faces must be a separate material named `LED` so they can glow at night
+and switch off by day.
+
+## Parked cars (3D, replaces the code-built cars)
+
+Use the **Sedan** and **SUV** prompts above with an image-to-3D tool. For these,
+the tyres must touch y = 0, with the car's nose facing +X. Name the window material
+`Glass` and the lamp materials `Headlight` and `Taillight`; the lamps glow at night.
+
 ## Adding a finished model
 
 Put the `.glb` in `public/assets/models/` and send it over. It replaces the

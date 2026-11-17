@@ -7,7 +7,8 @@
 import { useFrame, useLoader, useThree } from "@react-three/fiber";
 import { useLayoutEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
-import { mergeGeometries, mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { sportById } from "@/content/sports";
 import { GALLERY_CLIPS, usePhotoTextures } from "./Gallery";
 import { canvasTexture, fonts } from "./textures";
@@ -550,123 +551,69 @@ function FacadeDetail() {
 /* --------------------------------------------------------------------- cars */
 
 type CarKind = "sedan" | "suv";
-interface CarSpec { body: [number, number][]; arches: [number, number]; wheelR: number; floor: number; glass: [number, number][]; width: number; roof: [number, number, number] }
+const CAR_URL: Record<CarKind, string> = { sedan: "/assets/models/car_sedan.glb", suv: "/assets/models/car_suv.glb" };
+export const CAR_MODELS = Object.values(CAR_URL);
 
-// Side profiles in metres (x = along the car, nose at +x; y = up). Wheel arches are cut from the bottom edge.
-const CAR_SPECS: Record<CarKind, CarSpec> = {
-  sedan: {
-    floor: 0.3, wheelR: 0.31, arches: [1.33, 0.4], width: 1.72,
-    body: [[2.18, 0.3], [2.28, 0.5], [2.23, 0.72], [1.95, 0.86], [1.1, 0.98], [-1.15, 0.98], [-1.65, 0.97], [-2.15, 0.9], [-2.27, 0.66], [-2.2, 0.3]],
-    glass: [[1.1, 0.97], [0.32, 1.42], [-0.62, 1.43], [-1.18, 0.97]],
-    roof: [0.92, -0.15, 1.43],
-  },
-  suv: {
-    floor: 0.42, wheelR: 0.38, arches: [1.45, 0.47], width: 1.86,
-    body: [[2.36, 0.42], [2.42, 0.76], [2.32, 1.0], [1.62, 1.1], [1.25, 1.16], [-2.3, 1.16], [-2.42, 0.92], [-2.38, 0.42]],
-    glass: [[1.25, 1.15], [0.5, 1.78], [-2.1, 1.8], [-2.33, 1.15]],
-    roof: [2.5, -0.8, 1.8],
-  },
-};
-
-const TYRE = new THREE.MeshStandardMaterial({ color: "#151616", roughness: 0.9 });
-const RIM = new THREE.MeshStandardMaterial({ color: "#c7cbcd", roughness: 0.25, metalness: 0.9 });
 const CAR_GLASS = new THREE.MeshPhysicalMaterial({ color: "#10171c", roughness: 0.05, metalness: 0.5, envMapIntensity: 1.6 });
-const TRIM = new THREE.MeshStandardMaterial({ color: "#101213", roughness: 0.5 });
 const TAIL_OFF = new THREE.MeshStandardMaterial({ color: "#6e1414", roughness: 0.3 });
 const TAIL_ON = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.6, 0.1, 0.08), toneMapped: false });
 const HEAD_OFF = new THREE.MeshStandardMaterial({ color: "#dfe6ea", roughness: 0.1, metalness: 0.6 });
-const carGeoCache = new Map<CarKind, { body: THREE.BufferGeometry; glass: THREE.BufferGeometry; tyre: THREE.BufferGeometry; rim: THREE.BufferGeometry }>();
+const CHROME = new THREE.MeshStandardMaterial({ color: "#c9ced3", roughness: 0.15, metalness: 1 });
 
-function carGeometry(kind: CarKind) {
-  const hit = carGeoCache.get(kind);
+interface CarParts { parts: { name: string; geo: THREE.BufferGeometry; base: THREE.Material }[]; length: number; width: number }
+const carCache = new WeakMap<object, CarParts>();
+
+/**
+ * The car models arrive as ~125 small parts each. Merge them into one mesh per material
+ * (paint, glass, chrome, trim, lamps, tyres, rims…) so a parked car costs ~10 draw calls.
+ */
+function carParts(scene: THREE.Group): CarParts {
+  const hit = carCache.get(scene);
   if (hit) return hit;
-  const S = CAR_SPECS[kind];
-  const [ax, ar] = S.arches;
-  const shape = new THREE.Shape();
-  const [first, ...rest] = S.body;
-  // Bottom edge runs from the rear to the nose, hopping over both wheels.
-  shape.moveTo(-first[0], S.floor);
-  shape.lineTo(-ax - ar, S.floor);
-  shape.absarc(-ax, S.floor, ar, Math.PI, 0, true);
-  shape.lineTo(ax - ar, S.floor);
-  shape.absarc(ax, S.floor, ar, Math.PI, 0, true);
-  shape.lineTo(first[0], first[1]);
-  for (const [x, y] of rest) shape.lineTo(x, y);
-  const bevel = 0.09;
-  const body = new THREE.ExtrudeGeometry(shape, { depth: S.width - bevel * 2, bevelEnabled: true, bevelThickness: bevel, bevelSize: 0.07, bevelSegments: 5, curveSegments: 12, steps: 1 });
-  body.translate(0, 0, -(S.width - bevel * 2) / 2);
-  const gShape = new THREE.Shape(S.glass.map(([x, y]) => new THREE.Vector2(x, y)));
-  const gw = S.width - 0.34;
-  const glass = new THREE.ExtrudeGeometry(gShape, { depth: gw - 0.1, bevelEnabled: true, bevelThickness: 0.05, bevelSize: 0.04, bevelSegments: 3 });
-  glass.translate(0, 0, -(gw - 0.1) / 2);
-  // Shape it like a car rather than a slab: sides lean in towards the top, the ends round off
-  // in plan, and the glasshouse narrows towards the roof (tumblehome).
-  const belt = Math.max(...S.body.map((p) => p[1]));
-  const roofY = Math.max(...S.glass.map((p) => p[1]));
-  const len = first[0];
-  const shapeIt = (src: THREE.BufferGeometry, top: (y: number) => number) => {
-    // Weld the extrusion so the paint shades as one smooth surface, not facets.
-    src.deleteAttribute("normal");
-    src.deleteAttribute("uv");
-    const g = mergeVertices(src, 1e-4);
-    const pos = g.attributes.position as THREE.BufferAttribute;
-    for (let i = 0; i < pos.count; i++) {
-      const x = pos.getX(i), y = pos.getY(i);
-      const end = Math.max(0, (Math.abs(x) / len - 0.72) / 0.28);
-      pos.setZ(i, pos.getZ(i) * top(y) * (1 - 0.2 * end * end));
-    }
-    g.computeVertexNormals();
-    return g;
-  };
-  const bodyGeo = shapeIt(body, (y) => 1 - 0.07 * Math.pow(THREE.MathUtils.clamp((y - S.floor) / (belt - S.floor), 0, 1), 2));
-  const glassGeo = shapeIt(glass, (y) => 1 - 0.22 * THREE.MathUtils.clamp((y - belt) / (roofY - belt), 0, 1));
-  const tyre = new THREE.CylinderGeometry(S.wheelR, S.wheelR, 0.24, 24).rotateX(Math.PI / 2);
-  const rim = new THREE.CylinderGeometry(S.wheelR * 0.62, S.wheelR * 0.62, 0.02, 18).rotateX(Math.PI / 2);
-  const out = { body: bodyGeo, glass: glassGeo, tyre, rim };
-  carGeoCache.set(kind, out);
+  scene.updateMatrixWorld(true);
+  const byMat = new Map<string, { base: THREE.Material; geos: THREE.BufferGeometry[] }>();
+  scene.traverse((o) => {
+    const m = o as THREE.Mesh;
+    if (!m.isMesh) return;
+    const mat = m.material as THREE.Material;
+    const g = m.geometry.clone().applyMatrix4(m.matrixWorld);
+    for (const k of Object.keys(g.attributes)) if (k !== "position" && k !== "normal") g.deleteAttribute(k);
+    const flat = g.index ? g.toNonIndexed() : g;
+    if (!flat.attributes.normal) flat.computeVertexNormals();
+    const e = byMat.get(mat.name) ?? { base: mat, geos: [] };
+    e.geos.push(flat);
+    byMat.set(mat.name, e);
+  });
+  const parts = [...byMat.entries()].map(([name, e]) => ({ name, geo: mergeGeometries(e.geos)!, base: e.base }));
+  const box = new THREE.Box3().setFromObject(scene);
+  const out = { parts, length: box.max.x - box.min.x, width: box.max.z - box.min.z };
+  carCache.set(scene, out);
   return out;
 }
 
-/** A parked car modelled in 3D: extruded body with rounded edges, tinted glasshouse, wheels and lamps. Sits on the ground. */
+/** A parked car from the supplied 3D model: paint recoloured per car, lamps lit only after dark. Nose points +X, tyres on the ground. */
 function Car({ kind, color, position, yaw = 0, lit }: { kind: CarKind; color: string; position: V; yaw?: number; lit: boolean }) {
-  const S = CAR_SPECS[kind];
-  const geo = carGeometry(kind);
-  const paint = useMemo(() => new THREE.MeshPhysicalMaterial({ color, roughness: 0.32, metalness: 0.35, clearcoat: 1, clearcoatRoughness: 0.06 }), [color]);
-  const half = S.width / 2;
-  const nose = S.body[0][0];
-  const [rl, rx, ry] = S.roof;
+  const gltf = useLoader(GLTFLoader, CAR_URL[kind]);
+  const car = carParts(gltf.scene);
+  const paint = useMemo(() => new THREE.MeshPhysicalMaterial({ color, roughness: 0.3, metalness: 0.4, clearcoat: 1, clearcoatRoughness: 0.06 }), [color]);
+  const pick = (name: string, base: THREE.Material) => {
+    switch (name) {
+      case "Paint": return paint;
+      case "Glass": return CAR_GLASS;
+      case "Chrome": return CHROME;
+      case "Headlight": return lit ? WARM_GLOW : HEAD_OFF;
+      case "Taillight": return lit ? TAIL_ON : TAIL_OFF;
+      default: return base;
+    }
+  };
   return (
     <group position={position} rotation={[0, yaw, 0]} userData={{ caster: true }}>
-      <mesh geometry={geo.body} material={paint} castShadow />
-      <mesh geometry={geo.glass} material={CAR_GLASS} />
-      <mesh position={[rx, ry, 0]} material={paint}>
-        <boxGeometry args={[rl, 0.05, (S.width - 0.34) * 0.76]} />
-      </mesh>
-      {/* bumpers' black lower trim */}
-      <mesh position={[0, S.floor + 0.06, 0]} material={TRIM}>
-        <boxGeometry args={[nose * 2 + 0.02, 0.12, S.width - 0.06]} />
-      </mesh>
-      {[-1, 1].flatMap((fx) =>
-        [-1, 1].map((sz) => (
-          <group key={`${fx}${sz}`} position={[fx * S.arches[0], S.wheelR, sz * (half - 0.14)]}>
-            <mesh geometry={geo.tyre} material={TYRE} />
-            <mesh geometry={geo.rim} material={RIM} position={[0, 0, sz * 0.12]} />
-          </group>
-        )),
-      )}
-      {[-1, 1].map((sz) => (
-        <group key={sz}>
-          <mesh position={[nose + 0.02, S.floor + (kind === "suv" ? 0.5 : 0.38), sz * (half - 0.3)]} rotation={[0, Math.PI / 2, 0]} material={lit ? WARM_GLOW : HEAD_OFF}>
-            <planeGeometry args={[0.42, 0.13]} />
-          </mesh>
-          <mesh position={[-S.body[S.body.length - 1][0] - 0.04, S.floor + (kind === "suv" ? 0.52 : 0.42), sz * (half - 0.25)]} rotation={[0, -Math.PI / 2, 0]} material={lit ? TAIL_ON : TAIL_OFF}>
-            <planeGeometry args={[0.4, 0.12]} />
-          </mesh>
-        </group>
+      {car.parts.map((p) => (
+        <mesh key={p.name} geometry={p.geo} material={pick(p.name, p.base)} castShadow={p.name === "Paint"} />
       ))}
       {/* soft contact shadow so it reads as resting on the asphalt */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.015, 0]}>
-        <planeGeometry args={[nose * 2 + 0.7, S.width + 0.7]} />
+        <planeGeometry args={[car.length + 0.6, car.width + 0.4]} />
         <meshBasicMaterial map={BLOB} transparent opacity={0.75} depthWrite={false} toneMapped={false} />
       </mesh>
     </group>
@@ -1011,7 +958,7 @@ function CarPark({ mobile }: { mobile: boolean }) {
   // Nose-in and nose-out, one bay left free, like a real lot.
   const cars: { z: number; kind: CarKind; color: string; yaw: number }[] = [
     { z: 13.2, kind: "sedan", color: "#e9ebe8", yaw: 0 },
-    { z: 10.5, kind: "suv", color: "#2e3336", yaw: Math.PI },
+    { z: 10.5, kind: "suv", color: "#8e959b", yaw: Math.PI },
     { z: 7.8, kind: "sedan", color: "#8c1d1d", yaw: 0 },
     { z: 2.4, kind: "suv", color: "#e3e1da", yaw: 0 },
     { z: -0.3, kind: "sedan", color: "#1d3557", yaw: Math.PI },

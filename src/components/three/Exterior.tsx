@@ -7,7 +7,6 @@
 import { useFrame, useLoader, useThree } from "@react-three/fiber";
 import { useLayoutEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
-import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { sportById } from "@/content/sports";
 import { GALLERY_CLIPS, usePhotoTextures } from "./Gallery";
@@ -551,72 +550,76 @@ function FacadeDetail() {
 /* --------------------------------------------------------------------- cars */
 
 type CarKind = "sedan" | "suv";
-const CAR_URL: Record<CarKind, string> = { sedan: "/assets/models/car_sedan.glb", suv: "/assets/models/car_suv.glb" };
-export const CAR_MODELS = Object.values(CAR_URL);
+const CAR_VIEWS = ["front", "hero", "side", "rear_3quarter", "rear"] as const;
+type CarView = (typeof CAR_VIEWS)[number];
+export const CAR_IMAGES = (["sedan", "suv"] as CarKind[]).flatMap((k) => CAR_VIEWS.map((v) => `/assets/props/cars/${k}_${v}.webp`));
 
-const CAR_GLASS = new THREE.MeshPhysicalMaterial({ color: "#10171c", roughness: 0.05, metalness: 0.5, envMapIntensity: 1.6 });
-const TAIL_OFF = new THREE.MeshStandardMaterial({ color: "#6e1414", roughness: 0.3 });
-const TAIL_ON = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.6, 0.1, 0.08), toneMapped: false });
-const HEAD_OFF = new THREE.MeshStandardMaterial({ color: "#dfe6ea", roughness: 0.1, metalness: 0.6 });
-const CHROME = new THREE.MeshStandardMaterial({ color: "#c9ced3", roughness: 0.15, metalness: 1 });
-
-interface CarParts { parts: { name: string; geo: THREE.BufferGeometry; base: THREE.Material }[]; length: number; width: number }
-const carCache = new WeakMap<object, CarParts>();
+// Real sizes (m). axle: centre to axle; track: centre to tyre.
+const CAR_DIMS: Record<CarKind, { h: number; len: number; wid: number; axle: number; track: number }> = {
+  sedan: { h: 1.47, len: 4.4, wid: 1.73, axle: 1.3, track: 0.76 },
+  suv: { h: 1.83, len: 4.8, wid: 1.86, axle: 1.4, track: 0.8 },
+};
+// The photos are cropped from tyre to roof; three-quarter views also show some of the roof from above.
+const VIEW_SCALE: Record<CarView, number> = { front: 1.02, hero: 1.13, side: 1, rear_3quarter: 1.13, rear: 1.02 };
+const PLANE_BASE = new THREE.PlaneGeometry(1, 1).translate(0, 0.5, 0);
 
 /**
- * The car models arrive as ~125 small parts each. Merge them into one mesh per material
- * (paint, glass, chrome, trim, lamps, tyres, rims…) so a parked car costs ~10 draw calls.
+ * A parked car drawn from the owner's studio photos. Five views (front, 3/4 front, side, 3/4 rear,
+ * rear), mirrored for the other side; each frame it shows the one that matches where the camera is.
+ * The picture stands where the nearest tyre meets the ground, so it sits on the asphalt instead of
+ * hovering. Nose points along +X at yaw 0; +Z is the car's right-hand side.
  */
-function carParts(scene: THREE.Group): CarParts {
-  const hit = carCache.get(scene);
-  if (hit) return hit;
-  scene.updateMatrixWorld(true);
-  const byMat = new Map<string, { base: THREE.Material; geos: THREE.BufferGeometry[] }>();
-  scene.traverse((o) => {
-    const m = o as THREE.Mesh;
-    if (!m.isMesh) return;
-    const mat = m.material as THREE.Material;
-    const g = m.geometry.clone().applyMatrix4(m.matrixWorld);
-    for (const k of Object.keys(g.attributes)) if (k !== "position" && k !== "normal") g.deleteAttribute(k);
-    const flat = g.index ? g.toNonIndexed() : g;
-    if (!flat.attributes.normal) flat.computeVertexNormals();
-    const e = byMat.get(mat.name) ?? { base: mat, geos: [] };
-    e.geos.push(flat);
-    byMat.set(mat.name, e);
+function Car({ kind, position, yaw = 0 }: { kind: CarKind; position: V; yaw?: number }) {
+  const D = CAR_DIMS[kind];
+  const texs = useLoader(THREE.TextureLoader, CAR_VIEWS.map((v) => `/assets/props/cars/${kind}_${v}.webp`));
+  const mats = useMemo(
+    () =>
+      texs.map((t) => {
+        t.colorSpace = THREE.SRGBColorSpace;
+        t.anisotropy = 8;
+        return new THREE.MeshStandardMaterial({ map: t, transparent: true, alphaTest: 0.04, roughness: 0.55, metalness: 0, side: THREE.DoubleSide });
+      }),
+    [texs],
+  );
+  const { camera } = useThree();
+  const board = useRef<THREE.Mesh>(null);
+  const cos = Math.cos(yaw), sin = Math.sin(yaw);
+  useFrame(() => {
+    const m = board.current;
+    if (!m) return;
+    const dx = camera.position.x - position[0], dz = camera.position.z - position[2];
+    const lx = dx * cos - dz * sin, lz = dx * sin + dz * cos; // camera in the car's own frame
+    const phi = (Math.atan2(lz, lx) * 180) / Math.PI; // 0 = in front, +90 = right side, -90 = left side
+    const a = Math.abs(phi), right = phi > 0;
+    let view: CarView, mirror = false;
+    if (a < 22.5) view = "front";
+    else if (a < 67.5) [view, mirror] = ["hero", right]; // photo shows the front-left corner
+    else if (a < 112.5) [view, mirror] = ["side", right]; // photo shows the left side
+    else if (a < 157.5) [view, mirror] = ["rear_3quarter", !right]; // photo shows the rear-right corner
+    else view = "rear";
+    const i = CAR_VIEWS.indexOf(view);
+    m.material = mats[i];
+    const img = texs[i].image as { width: number; height: number };
+    const h = D.h * VIEW_SCALE[view];
+    m.scale.set(((h * img.width) / img.height) * (mirror ? -1 : 1), h, 1);
+    // stand the picture at the nearest tyre, facing the camera
+    const n = Math.hypot(dx, dz) || 1;
+    const c = Math.abs(lx) / n, s2 = Math.abs(lz) / n;
+    const d = D.axle * c + D.track * s2;
+    m.position.set(position[0] + (dx / n) * d, 0, position[2] + (dz / n) * d);
+    m.rotation.y = Math.atan2(dx, dz);
   });
-  const parts = [...byMat.entries()].map(([name, e]) => ({ name, geo: mergeGeometries(e.geos)!, base: e.base }));
-  const box = new THREE.Box3().setFromObject(scene);
-  const out = { parts, length: box.max.x - box.min.x, width: box.max.z - box.min.z };
-  carCache.set(scene, out);
-  return out;
-}
-
-/** A parked car from the supplied 3D model: paint recoloured per car, lamps lit only after dark. Nose points +X, tyres on the ground. */
-function Car({ kind, color, position, yaw = 0, lit }: { kind: CarKind; color: string; position: V; yaw?: number; lit: boolean }) {
-  const gltf = useLoader(GLTFLoader, CAR_URL[kind]);
-  const car = carParts(gltf.scene);
-  const paint = useMemo(() => new THREE.MeshPhysicalMaterial({ color, roughness: 0.3, metalness: 0.4, clearcoat: 1, clearcoatRoughness: 0.06 }), [color]);
-  const pick = (name: string, base: THREE.Material) => {
-    switch (name) {
-      case "Paint": return paint;
-      case "Glass": return CAR_GLASS;
-      case "Chrome": return CHROME;
-      case "Headlight": return lit ? WARM_GLOW : HEAD_OFF;
-      case "Taillight": return lit ? TAIL_ON : TAIL_OFF;
-      default: return base;
-    }
-  };
   return (
-    <group position={position} rotation={[0, yaw, 0]} userData={{ caster: true }}>
-      {car.parts.map((p) => (
-        <mesh key={p.name} geometry={p.geo} material={pick(p.name, p.base)} castShadow={p.name === "Paint"} />
-      ))}
-      {/* soft contact shadow so it reads as resting on the asphalt */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.015, 0]}>
-        <planeGeometry args={[car.length + 0.6, car.width + 0.4]} />
-        <meshBasicMaterial map={BLOB} transparent opacity={0.75} depthWrite={false} toneMapped={false} />
-      </mesh>
-    </group>
+    <>
+      <mesh ref={board} geometry={PLANE_BASE} material={mats[1]} />
+      <group position={position} rotation={[0, yaw, 0]}>
+        {/* soft shadow over the real footprint */}
+        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.015, 0]}>
+          <planeGeometry args={[D.len + 0.5, D.wid + 0.5]} />
+          <meshBasicMaterial map={BLOB} transparent opacity={0.7} depthWrite={false} toneMapped={false} />
+        </mesh>
+      </group>
+    </>
   );
 }
 
@@ -954,15 +957,14 @@ function CarPark({ mobile }: { mobile: boolean }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const stops = useMemo(() => mergeGeometries(bays.map((z) => box(0.18, 0.12, 1.7, [X - LEN / 2 + 0.45, 0.06, z])))!, []); // eslint-disable-line react-hooks/exhaustive-deps
-  const lit = useLit();
   // Nose-in and nose-out, one bay left free, like a real lot.
-  const cars: { z: number; kind: CarKind; color: string; yaw: number }[] = [
-    { z: 13.2, kind: "sedan", color: "#e9ebe8", yaw: 0 },
-    { z: 10.5, kind: "suv", color: "#8e959b", yaw: Math.PI },
-    { z: 7.8, kind: "sedan", color: "#8c1d1d", yaw: 0 },
-    { z: 2.4, kind: "suv", color: "#e3e1da", yaw: 0 },
-    { z: -0.3, kind: "sedan", color: "#1d3557", yaw: Math.PI },
-    { z: -3.0, kind: "sedan", color: "#9a9ea0", yaw: 0 },
+  const cars: { z: number; kind: CarKind; yaw: number }[] = [
+    { z: 13.2, kind: "sedan", yaw: 0 },
+    { z: 10.5, kind: "suv", yaw: Math.PI },
+    { z: 7.8, kind: "sedan", yaw: 0 },
+    { z: 2.4, kind: "suv", yaw: 0 },
+    { z: -0.3, kind: "sedan", yaw: Math.PI },
+    { z: -3.0, kind: "sedan", yaw: 0 },
   ];
   return (
     <group>
@@ -973,7 +975,7 @@ function CarPark({ mobile }: { mobile: boolean }) {
         <meshStandardMaterial color="#c9c9c0" roughness={0.9} />
       </mesh>
       {(mobile ? cars.slice(0, 4) : cars).map((c) => (
-        <Car key={c.z} kind={c.kind} color={c.color} position={[X + 0.3, 0, c.z]} yaw={c.yaw} lit={lit} />
+        <Car key={c.z} kind={c.kind} position={[X + 0.3, 0, c.z]} yaw={c.yaw} />
       ))}
       <group position={[X + LEN / 2 + 0.6, 0, 14.9]}>
         <mesh position={[0, 1.4, 0]} material={FRAME}>

@@ -111,9 +111,8 @@ All programmatically generated content is original procedural output from this t
 | `public/assets/video/highlight-padel-poster.jpg` | frame of highlight-padel.mp4 | Higgsfield, FFmpeg | Generated on the account holder's Higgsfield plan; subject to Higgsfield's terms; not CC0. |
 | `public/assets/video/highlight-billiards-poster.jpg` | frame of highlight-billiards.mp4 | Higgsfield, FFmpeg | Generated on the account holder's Higgsfield plan; subject to Higgsfield's terms; not CC0. |
 
-## Car models (supplied by the site owner, 2026-11-17)
+## Car photos (supplied by the site owner, 2026-11-17)
 
-| File | Source | Notes |
+| Files | Source | Notes |
 |---|---|---|
-| `public/assets/models/car_sedan.glb` | supplied by the owner (Google Drive, with reference images and prompts) | ~23k triangles, untextured PBR materials; paint recoloured in code |
-| `public/assets/models/car_suv.glb` | supplied by the owner (Google Drive, with reference images and prompts) | ~25k triangles, untextured PBR materials; paint recoloured in code |
+| `public/assets/props/cars/{sedan,suv}_{front,hero,side,rear_3quarter,rear}.webp` | studio reference images supplied by the owner (Google Drive) | cut out of the backdrop and cropped at the tyre line by `scripts/make_car_cutouts.py` |

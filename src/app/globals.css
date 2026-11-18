@@ -836,8 +836,10 @@ html[data-motion="reduced"] .scroll-cue span.bar {
   font-size: 0.85rem;
 }
 .mini-chip.taken {
-  opacity: 0.35;
+  /* still readable (WCAG AA contrast); "taken" is shown by the strike-through and dashed outline */
+  opacity: 0.6;
   text-decoration: line-through;
+  border-style: dashed;
 }
 .mini-chip.sel {
   background: var(--lime);

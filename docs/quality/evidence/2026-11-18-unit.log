@@ -1,0 +1,36 @@
+
+> playbook@0.1.0 test
+> node --experimental-strip-types --no-warnings tests/engine.test.ts
+
+  ✓ slots respect hours, duration and increments
+  ✓ busy intervals block overlapping starts only
+  ✓ buffer keeps a gap around bookings
+  ✓ past and too-soon starts are hidden
+  ✓ durations
+  ✓ price, deposit and platform fee
+  ✓ refund: full before the free-cancel window, none after
+  ✓ cancel only future held/confirmed bookings
+  ✓ refs look like PB-XXXXXX without ambiguous characters
+
+9 engine checks passed.
+  ✓ valid test-mode signature passes
+  ✓ tampered body fails
+  ✓ live mode needs the li signature
+  ✓ old timestamps are rejected
+13 checks passed in total.
+  ✓ next group takes the four longest-waiting players
+  ✓ no group with fewer than four waiting
+  ✓ skill matching groups the head player's level
+  ✓ skill matching falls back to earliest others
+  ✓ teams spread arrival order
+  ✓ all-off sends everyone back
+  ✓ winners stay, losers queue
+  ✓ winners rotate off at the streak cap
+  ✓ public names hide surnames
+22 checks passed in total.
+  ✓ fixed cut is the same whatever the price (even a free session)
+  ✓ percent cut follows the price, with an optional minimum
+  ✓ weeks run Monday to Sunday
+  ✓ levels follow the rating
+  ✓ beating a stronger team moves the rating more than beating a weaker one
+27 checks passed in total.

@@ -1,0 +1,40 @@
+PASS T-A1 Sign-in with correct password succeeds for every seeded role :: admin:200 ownerA:200 managerA:200 staffA:200 ownerB:200 player1:200 player2:200
+PASS T-A2 Wrong password refused :: status 401
+PASS T-A3 Sign-up cannot set role=admin in the request body :: signup 400; role=not created
+PASS T-A4 Signed-in user cannot promote self via update-user :: update-user 400; role=user
+PASS T-A5 Non-admin cannot call admin API (set-role, list-users) :: set-role 403, list-users 403, role=user
+PASS T-A6 Sign-out ends the session (account redirects to login) :: sign-out 200 → /login?next=%2Faccount
+PASS T-A7 Password reset: link works, new password signs in, old one fails :: new:200 old:401 restore:200
+PASS T-A8 Banned user cannot sign in; unban restores :: banned sign-in 403, after unban 200, id pKvmCM
+PASS T-P1 Signed-out visitor is sent to sign-in for account, admin and venue pages :: /account→/login?next= /admin→/login?next= /venue/d20e722b-5e28-46a→/login?next= /venue/d20e722b-5e28-46a→/login?next= /venue/d20e722b-5e28-46a→/login?next= /ven
+PASS T-P2 Player cannot open /admin or another venue's dashboard :: /account?denied=admin /venue?denied=1 /venue?denied=1 /venue?denied=1 /venue?denied=1 /venue?denied=1
+PASS T-P3 Owner of venue B cannot open any venue A page (tenant isolation) :: /venue?denied=1 /venue?denied=1 /venue?denied=1 /venue?denied=1 /venue?denied=1
+PASS T-P4 Front-desk staff cannot see staff, payments, billing or settings tabs (even by URL) :: tabs=OVERVIEW,CALENDAR,RECURRING,OPEN PLAY,PLAYERS,COURTS leaks=none
+PASS T-P5 Manager cannot see owner-only payments/billing :: leaks=none
+PASS T-P6 Another player cannot open player 1's booking page :: HTTP 404
+PASS T-P7 Owner B cannot open venue A invoices by ID :: own-venue-url→/venue?denied=1; cross-url HTTP 404
+PASS T-F1 Owner B edits venue A court by swapping the court id (venue_id still B) :: rate before 50000 after 50000; server: 303 a6?tab=courts&error=Court not found at this venue.
+PASS T-F2 Owner B edits venue A court by swapping venue_id to A :: rate 50000→50000; server: 303 /venue?denied=1
+PASS T-F3 Front-desk staff replays manager-only "add court" :: courts 2→2; server: 303 /venue?denied=1
+PASS T-F4 Manager replays owner-only "block player" :: blocks 0→0; server: 303 /venue?denied=1
+PASS T-F5 Manager replays "add member" as manager (owner-only) to promote staff :: staffA role now staff; server: 303 0796b44e8b1?tab=staff&error=Only the owner can add managers.
+PASS T-F6 Owner B adds themself to venue A by replaying add-member with venue_id A :: ownerB memberships in A: 0; server: 303 /venue?denied=1
+PASS T-F7 Player replays admin "suspend venue" :: venue A status active; server: 303 /account?denied=admin
+PASS T-F8 Player replays admin "make admin" on themself :: role user; server: 303 /account?denied=admin
+PASS T-F9 Another player replays "cancel booking" on player 1's booking :: status confirmed; server: 303 /account?error=Booking%20not%20found.
+PASS T-F10 Another player replays "post message" on player 1's booking :: intruder messages 0; server: 303 /account
+PASS T-F11 Owner B replays "cancel booking" on a venue A booking :: status confirmed; server: 303 /account?error=Booking%20not%20found.
+PASS T-F12 Owner B starts venue A open-play session (venue_id B and A) :: status scheduled; server: 303 /venue/180093c1-c4eb-4e70-a156-e8c7fd1010a6?tab=openplay | 303 /venue?denied=1
+PASS T-F13 Signed-out visitor replays a venue action (walk-in style add court) :: courts 2→2; server: 303 /login?next=%2Fvenue%2Fd20e722b-5e28-46aa-9c48-d0796b44e8b1
+PASS T-W1 Booked slot is no longer offered to other players :: 12:00 PM offered? false (17 slots)
+PASS T-W2 Two players racing for the same slot: exactly one gets it :: active rows=1; p2→/bookings/764f7602-7021-4452-8197-c9b986709030 | mgr→ror=That time was just taken. Please pick another.
+PASS T-W3 Expired hold frees the slot :: cancelled / Hold expired
+PASS T-W4 Suspended venue disappears from listings and refuses new holds :: listed 0, venue page HTTP 404
+PASS T-W5 Cut recorded on an online booking and on a staff walk-in (20% of the court price) :: online fee 10000, walk-in fee 10000; server: 303 1?tab=calendar&date=2026-11-19&ok=Walk-in added for Walk QA.
+PASS T-V1 Venue registration rejects missing business details :: venues 2→2, /venue/new?error=Enter the registered business name.
+PASS T-V2 Court rate must be positive :: rate 50000→50000; =courts&error=Enter a valid hourly rate.
+PASS T-V3 Empty chat message is rejected :: messages 0→0
+PASS T-V4 Booking more than 14 days ahead is refused :: bookings on 2026-12-18: 0; 60&sport=pickleball&error=Bookings open up to 14 days ahead.
+PASS T-U1 No horizontal overflow at 360px on key app screens :: 14 screens fit
+
+SUMMARY 38 pass / 38

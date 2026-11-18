@@ -4,6 +4,14 @@
 //   /assets/*        textures, photos, HDRIs (served from cache at once, refreshed in the background)
 // Pages, API calls, logins and payments never touch this cache.
 const CACHE = "pb-static-v1";
+// Build files get new names on every deploy, so old ones would pile up on a regular visitor's
+// phone. Keep at most this many entries; the oldest go first (cache keys keep insertion order).
+const MAX_ENTRIES = 250;
+
+async function trim(cache) {
+  const keys = await cache.keys();
+  for (const k of keys.slice(0, Math.max(0, keys.length - MAX_ENTRIES))) await cache.delete(k);
+}
 
 self.addEventListener("install", () => self.skipWaiting());
 
@@ -30,7 +38,7 @@ self.addEventListener("fetch", (event) => {
       const hit = await cache.match(req);
       const refresh = fetch(req)
         .then((res) => {
-          if (res.ok && res.type === "basic") cache.put(req, res.clone());
+          if (res.ok && res.type === "basic") event.waitUntil(cache.put(req, res.clone()).then(() => trim(cache)));
           return res;
         })
         .catch(() => undefined);

@@ -55,15 +55,17 @@ export const auth = betterAuth({
   databaseHooks: {
     user: {
       create: {
-        // Emails listed in PLATFORM_ADMIN_EMAILS become platform admins on sign-up.
-        // Admin by email only for email sign-up (which confirms the address once email is configured)
-        // or a provider that vouches for the email; never on an unverified social email.
+        // Emails listed in PLATFORM_ADMIN_EMAILS become platform admins on sign-up, but only when the
+        // address is proven: a provider that vouches for it (Google, Apple), or the email form while
+        // email confirmation is on (the account cannot sign in until the inbox owner confirms).
+        // Without email configured, anyone could claim an unregistered admin address through the form.
         before: async (user, ctx) => {
           const viaEmailForm = ctx?.path === "/sign-up/email";
-          const isAdmin = adminEmails().includes(user.email.toLowerCase()) && (viaEmailForm || user.emailVerified === true);
+          const proven = user.emailVerified === true || (viaEmailForm && emailConfigured());
+          const isAdmin = adminEmails().includes(user.email.toLowerCase()) && proven;
           return { data: { ...user, role: isAdmin ? "admin" : "user" } };
         },
-        // The sign-up form can't be submitted without both boxes ticked; keep the record of what was agreed to.
+        // Sign-up (form or social) can't proceed without agreeing to the Terms and Privacy Policy; keep the record.
         after: async (user) => {
           await getPool()
             .query("INSERT INTO user_consent (user_id, document, version) VALUES ($1,'terms',$2), ($1,'privacy',$2)", [user.id, POLICY_VERSION])

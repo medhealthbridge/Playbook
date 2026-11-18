@@ -22,6 +22,13 @@ async function makeVenue(page, name, courts) {
     for (let t = 0; t < 6; t++) { r = await signupApi(ctx.request, n, e); if (r.status !== 429) break; await new Promise(res => setTimeout(res, 4000)); }
     if (r.status !== 200) console.log('signup', k, r.status, r.body.slice(0, 100));
   }
+  // T-AUTH-ADMIN-01: with email confirmation off (no RESEND_API_KEY), signing up through the form with an
+  // address listed in PLATFORM_ADMIN_EMAILS must NOT grant admin; anyone could claim the address.
+  const adminRole = (await db('SELECT role FROM "user" WHERE email=$1', [U.admin[1]]))[0]?.role;
+  if (!process.env.RESEND_API_KEY && adminRole !== 'user') { console.error(`FAIL T-AUTH-ADMIN-01: unconfirmed form sign-up got role ${adminRole}`); process.exit(1); }
+  console.log(`PASS T-AUTH-ADMIN-01: unconfirmed form sign-up of a listed admin email got role "${adminRole}"`);
+  // Promote the QA admin the way an operator would (direct, audited change on the dev database).
+  await db(`UPDATE "user" SET role='admin' WHERE email=$1`, [U.admin[1]]);
   const A = await login(b, U.ownerA[1]); const venueA = await makeVenue(A.page, 'Alpha Pickle', 2);
   const BB = await login(b, U.ownerB[1]); const venueB = await makeVenue(BB.page, 'Bravo Pickle', 1);
   const ad = await login(b, U.admin[1]);
@@ -44,7 +51,7 @@ async function makeVenue(page, name, courts) {
   const courtsA = await db('SELECT id, name FROM resource WHERE venue_id=$1 ORDER BY sort', [venueA]);
   const courtsB = await db('SELECT id, name FROM resource WHERE venue_id=$1 ORDER BY sort', [venueB]);
   const out = { U, venueA, venueB, bookingId, sessionId, courtsA, courtsB, tomorrow };
-  require('fs').writeFileSync('seed.json', JSON.stringify(out, null, 2));
+  require('fs').writeFileSync(require('path').join(__dirname, 'seed.json'), JSON.stringify(out, null, 2));
   console.log(JSON.stringify({ venueA, venueB, bookingId, sessionId, courtsA: courtsA.length, courtsB: courtsB.length }));
   const roles = await db(`SELECT u.email, u.role, (SELECT string_agg(v.name||':'||m.role, ',') FROM venue_member m JOIN venue v ON v.id=m.venue_id WHERE m.user_id=u.id) AS venues FROM "user" u ORDER BY u.email`);
   console.table(roles);

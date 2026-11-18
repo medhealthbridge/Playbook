@@ -13,5 +13,6 @@ answer, not on what the UI hides.
    (qa.js changes player2's password in its reset test, so run quality.js first or re-seed).
 4. Clean up QA data afterwards (only `@playbook.test` users and their venues).
 
-`PLATFORM_ADMIN_EMAILS` must include `admin-test@playbook.test` for the QA admin.
+`PLATFORM_ADMIN_EMAILS` must include `admin-test@playbook.test`: the seed checks that an unconfirmed
+form sign-up of a listed address does **not** become admin (T-AUTH-ADMIN-01), then promotes it directly.
 Point `.env.local` at the Neon `dev` branch, never at `main` (production).

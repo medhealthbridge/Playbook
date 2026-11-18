@@ -1,0 +1,22 @@
+signup admin 422 {"message":"User already exists. Use another email.","code":"USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL"}
+signup ownerA 422 {"message":"User already exists. Use another email.","code":"USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL"}
+signup managerA 422 {"message":"User already exists. Use another email.","code":"USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL"}
+signup staffA 422 {"message":"User already exists. Use another email.","code":"USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL"}
+signup ownerB 422 {"message":"User already exists. Use another email.","code":"USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL"}
+signup player1 422 {"message":"User already exists. Use another email.","code":"USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL"}
+signup player2 422 {"message":"User already exists. Use another email.","code":"USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL"}
+signup banme 422 {"message":"User already exists. Use another email.","code":"USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL"}
+PASS T-AUTH-ADMIN-01: unconfirmed form sign-up of a listed admin email got role "user"
+{"venueA":"d20e722b-5e28-46aa-9c48-d0796b44e8b1","venueB":"180093c1-c4eb-4e70-a156-e8c7fd1010a6","bookingId":"9a095ff5-b9df-4651-af65-d8ccd6681092","sessionId":"6c160484-33a8-42a3-a149-377f9dbdcdea","courtsA":2,"courtsB":1}
+┌─────────┬─────────────────────────────┬─────────┬────────────────────────┐
+│ (index) │ email                       │ role    │ venues                 │
+├─────────┼─────────────────────────────┼─────────┼────────────────────────┤
+│ 0       │ 'admin-test@playbook.test'  │ 'admin' │ null                   │
+│ 1       │ 'banme-qa@playbook.test'    │ 'user'  │ null                   │
+│ 2       │ 'managera-qa@playbook.test' │ 'user'  │ 'Alpha Pickle:manager' │
+│ 3       │ 'ownera-qa@playbook.test'   │ 'user'  │ 'Alpha Pickle:owner'   │
+│ 4       │ 'ownerb-qa@playbook.test'   │ 'user'  │ 'Bravo Pickle:owner'   │
+│ 5       │ 'player1-qa@playbook.test'  │ 'user'  │ null                   │
+│ 6       │ 'player2-qa@playbook.test'  │ 'user'  │ null                   │
+│ 7       │ 'staffa-qa@playbook.test'   │ 'user'  │ 'Alpha Pickle:staff'   │
+└─────────┴─────────────────────────────┴─────────┴────────────────────────┘

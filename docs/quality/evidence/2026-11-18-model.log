@@ -1,0 +1,21 @@
+PASS M1 Joining saves the declared level to the player profile :: {"level":"advanced","rating":1600}
+PASS M2 Joining without ticking the consent box is refused (forged request) :: rows=0 error=Please tick the box to agree before joining.
+PASS M3 No payment, no play: check-in with less cash than the fee is refused :: status=registered cut=0
+PASS M4 Check-in with cash recorded queues the player and records the fixed cut (₱30) :: status=waiting cut=3000 paid=25000 cash
+PASS M5 A rental is added to what is due, and carries no cut :: ₱250 refused=true; then status=waiting rental=5000 cut=3000
+PASS M6 Admin changes the cut to 10% and the next check-in uses it :: cut at 10% = 2500; restored to {"mode":"fixed","value":3000,"min_cents":0}
+PASS M7 Walk-in without the fee recorded is refused; with cash it is queued with the cut :: unpaid rows=0; paid walk-in {"status":"waiting","platform_fee_cents":3000,"pay_method":"cash"}
+PASS M8 Void needs a reason, removes the cut and is recorded :: {"status":"left","platform_fee_cents":0,"void_reason":"refunded, had to leave","voided":true} audit=1 admin-sees=1
+PASS M9 Matchmaking puts four checked-in players on the free court :: A=2 B=2
+PASS M10 A level score is refused :: game playing; nter the final score for both teams. A game can't end level.
+PASS M11 Final score sets the winner and updates every player's record and rating :: winner=a 11-7; 0W1L r1293 0W1L r1293 1W0L r1607 1W0L r1307
+PASS M12 A player cannot reset their own level once they have a scored game :: rating 1293→1293
+PASS M13 Payment bell feed: signed-out 401, another venue's owner 403, own staff 200 :: anon 401 other 403 own 200
+PASS M14 Court booking: party size and rental saved; cut is 20% of the court price only :: {"party_size":6,"rental_cents":10000,"price_cents":60000,"platform_fee_cents":10000}
+PASS M15 Weekly statement adds up the cut on check-ins made this week; running it twice does not duplicate :: statements=1 {"id":"b0977b1a-80d1-428d-9a13-9b9ddbb8adbb","open_play_count":4,"open_play_fee_cents":11500,"total_cents":21500} expected play=11500
+PASS M16 Overdue statement pauses the venue: no new holds, check-ins or walk-ins :: bookings 2→2, walk-in rows=0, owner banner=1
+PASS M17 Admin marks the statement paid and the venue resumes :: statement paid, walk-in rows=1
+PASS M18 Owner blocks a player: that account can no longer hold a court here :: bookings 1→1
+PASS M19 Facilitator cannot change the cut or open admin transactions :: landed on /account
+
+19/19 model checks passed.

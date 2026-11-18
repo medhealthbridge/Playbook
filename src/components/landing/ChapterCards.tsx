@@ -16,7 +16,7 @@ export function BookCard() {
         <div className="title">Court A · Main hardwood</div>
         <div className="meta">Indoor · Hardwood · Up to 20 · Basketball &amp; volleyball share this court</div>
       </div>
-      <div className="mini-chips" aria-label="Sample start times">
+      <div className="mini-chips" role="group" aria-label="Sample start times">
         {times.map(([t, s]) => (
           <span key={t} className={`mini-chip ${s === "taken" ? "taken" : s === "sel" ? "sel" : ""}`}>
             {t}
@@ -46,14 +46,14 @@ export function PlayCard() {
         <div className="meta">Court A · Sat 6:00–8:00 PM · ₱1,250 balance at venue</div>
       </div>
       <div className="row">
-        <div className="people" aria-label="Squad: You, Migs, Ana, JR">
+        <div className="people" role="img" aria-label="Squad: You, Migs, Ana, JR">
           {["Y", "M", "A", "J"].map((i) => (
             <span key={i} className="avatar" aria-hidden="true">{i}</span>
           ))}
         </div>
         <span className="meta">2 going · 2 invited</span>
       </div>
-      <div className="amenities" aria-label="Amenities">
+      <div className="amenities" role="group" aria-label="Amenities">
         {["Showers", "Lockers", "Water refill", "Parking", "Scoreboard"].map((a) => (
           <span key={a} className="badge on-dark">{a}</span>
         ))}

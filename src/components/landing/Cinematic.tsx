@@ -308,7 +308,11 @@ function ChapterPanel({ id, card, right }: { id: "book" | "play" | "replay"; car
  * public/assets/journey/<chapter>.webp. A chapter with no entry here keeps its drawn illustration,
  * so add each file name only once the image is in place (prompts: docs/JOURNEY_IMAGE_PROMPTS.md).
  */
-const JOURNEY_PHOTOS: Partial<Record<"book" | "play" | "replay", { src: string; alt: string }>> = {};
+const JOURNEY_PHOTOS: Partial<Record<"book" | "play" | "replay", { src: string; alt: string }>> = {
+  book: { src: "/assets/journey/book.webp", alt: "An empty indoor basketball court at dusk, a ball waiting on the hardwood" },
+  play: { src: "/assets/journey/play.webp", alt: "Friends mid-game at an indoor volleyball net, one player rising to spike" },
+  replay: { src: "/assets/journey/replay.webp", alt: "A badminton player frozen mid-air at the top of a smash" },
+};
 
 function StaticJourney({ webglFailed }: { webglFailed: boolean }) {
   const { open } = useBooking();

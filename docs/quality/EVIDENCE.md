@@ -17,7 +17,7 @@ Environment: local production build (`next build` + `next start -p 3100`), `.env
 | Secret scan | regex scan of this session's diff + tracked files | no secrets; 3 hits are input placeholders / key-prefix check | VERIFIED (pattern scan only) | evidence/2026-11-18-secrets.log |
 | Seed + T-AUTH-ADMIN-01 | `node tests/qa/seed.js` | PASS: unconfirmed form sign-up of a listed admin email gets role "user" | VERIFIED | evidence/2026-11-18-seed.log |
 | Holds, webhooks, headers | `node tests/qa/quality.js` | 9/9 | VERIFIED | evidence/2026-11-18-quality.log |
-| Auth, permissions, isolation, escalation, workflows | `node tests/qa/qa.js` | 38/38 | VERIFIED | evidence/2026-11-18-qa.log |
+| Auth, permissions, isolation, escalation, workflows | `node tests/qa/qa.js` | 38/38 | VERIFIED | evidence/2026-11-18-qa.log, evidence/2026-11-18-qa-results.json |
 | Business model (cut, statements, pause, open play) | `node tests/qa/model.js` | 19/19 | VERIFIED | evidence/2026-11-18-model.log |
 | Accessibility (axe, WCAG 2.2 AA rules) | axe-core on /login, /signup, / (reduced motion), dark + light | 2 issues found on /, fixed; rerun 0 violations | VERIFIED (automated only) | evidence/2026-11-18-axe.log |
 | Static cache privacy | Playwright: signed-in player, list `pb-static-v1` entries | 72 entries, all /assets or /_next/static; no pages or API responses | VERIFIED | (console output in session) |
@@ -39,3 +39,11 @@ which the sign-in page explains). `/assets` holds only build-time files, so the 
 Not verified this pass: real Google/Facebook/Apple sign-in (no provider keys yet); 3D frame rate on real low-end
 phones (software rendering only here); screen-reader walkthrough; load test of booking endpoints (unchanged since
 the last pass). QA data (`@playbook.test`) left on the `dev` branch for re-runs.
+
+### Deployed
+
+Commit 9395a00 deployed to production (playbook.databridgesol.space), deployment dpl_CqkDX6DtpeEpQHsHWp1Uhre88yYb.
+Observed live: new service worker served; `/`, `/login` 200; `/signup` loaded 4/4 in a real browser at human pace
+with the consent box present. Rapid scripted curl bursts from the cloud container were intermittently answered
+403 with `x-vercel-mitigated: deny` (Vercel's default platform protection; the project has no custom firewall rules).
+Not exercised live: the admin rule itself (testing it would mean registering the owner's address).

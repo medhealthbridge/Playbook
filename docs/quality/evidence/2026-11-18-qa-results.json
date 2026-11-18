@@ -1,0 +1,230 @@
+[
+  {
+    "id": "T-A1",
+    "what": "Sign-in with correct password succeeds for every seeded role",
+    "pass": true,
+    "evidence": "admin:200 ownerA:200 managerA:200 staffA:200 ownerB:200 player1:200 player2:200"
+  },
+  {
+    "id": "T-A2",
+    "what": "Wrong password refused",
+    "pass": true,
+    "evidence": "status 401"
+  },
+  {
+    "id": "T-A3",
+    "what": "Sign-up cannot set role=admin in the request body",
+    "pass": true,
+    "evidence": "signup 400; role=not created"
+  },
+  {
+    "id": "T-A4",
+    "what": "Signed-in user cannot promote self via update-user",
+    "pass": true,
+    "evidence": "update-user 400; role=user"
+  },
+  {
+    "id": "T-A5",
+    "what": "Non-admin cannot call admin API (set-role, list-users)",
+    "pass": true,
+    "evidence": "set-role 403, list-users 403, role=user"
+  },
+  {
+    "id": "T-A6",
+    "what": "Sign-out ends the session (account redirects to login)",
+    "pass": true,
+    "evidence": "sign-out 200 → /login?next=%2Faccount"
+  },
+  {
+    "id": "T-A7",
+    "what": "Password reset: link works, new password signs in, old one fails",
+    "pass": true,
+    "evidence": "new:200 old:401 restore:200"
+  },
+  {
+    "id": "T-A8",
+    "what": "Banned user cannot sign in; unban restores",
+    "pass": true,
+    "evidence": "banned sign-in 403, after unban 200, id pKvmCM"
+  },
+  {
+    "id": "T-P1",
+    "what": "Signed-out visitor is sent to sign-in for account, admin and venue pages",
+    "pass": true,
+    "evidence": "/account→/login?next= /admin→/login?next= /venue/d20e722b-5e28-46a→/login?next= /venue/d20e722b-5e28-46a→/login?next= /venue/d20e722b-5e28-46a→/login?next= /venue/d20e722b-5e28-46a→/login?next= /venue/d20e722b-5e28-46a→/"
+  },
+  {
+    "id": "T-P2",
+    "what": "Player cannot open /admin or another venue's dashboard",
+    "pass": true,
+    "evidence": "/account?denied=admin /venue?denied=1 /venue?denied=1 /venue?denied=1 /venue?denied=1 /venue?denied=1"
+  },
+  {
+    "id": "T-P3",
+    "what": "Owner of venue B cannot open any venue A page (tenant isolation)",
+    "pass": true,
+    "evidence": "/venue?denied=1 /venue?denied=1 /venue?denied=1 /venue?denied=1 /venue?denied=1"
+  },
+  {
+    "id": "T-P4",
+    "what": "Front-desk staff cannot see staff, payments, billing or settings tabs (even by URL)",
+    "pass": true,
+    "evidence": "tabs=OVERVIEW,CALENDAR,RECURRING,OPEN PLAY,PLAYERS,COURTS leaks=none"
+  },
+  {
+    "id": "T-P5",
+    "what": "Manager cannot see owner-only payments/billing",
+    "pass": true,
+    "evidence": "leaks=none"
+  },
+  {
+    "id": "T-P6",
+    "what": "Another player cannot open player 1's booking page",
+    "pass": true,
+    "evidence": "HTTP 404"
+  },
+  {
+    "id": "T-P7",
+    "what": "Owner B cannot open venue A invoices by ID",
+    "pass": true,
+    "evidence": "own-venue-url→/venue?denied=1; cross-url HTTP 404"
+  },
+  {
+    "id": "T-F1",
+    "what": "Owner B edits venue A court by swapping the court id (venue_id still B)",
+    "pass": true,
+    "evidence": "rate before 50000 after 50000; server: 303 a6?tab=courts&error=Court not found at this venue."
+  },
+  {
+    "id": "T-F2",
+    "what": "Owner B edits venue A court by swapping venue_id to A",
+    "pass": true,
+    "evidence": "rate 50000→50000; server: 303 /venue?denied=1"
+  },
+  {
+    "id": "T-F3",
+    "what": "Front-desk staff replays manager-only \"add court\"",
+    "pass": true,
+    "evidence": "courts 2→2; server: 303 /venue?denied=1"
+  },
+  {
+    "id": "T-F4",
+    "what": "Manager replays owner-only \"block player\"",
+    "pass": true,
+    "evidence": "blocks 0→0; server: 303 /venue?denied=1"
+  },
+  {
+    "id": "T-F5",
+    "what": "Manager replays \"add member\" as manager (owner-only) to promote staff",
+    "pass": true,
+    "evidence": "staffA role now staff; server: 303 0796b44e8b1?tab=staff&error=Only the owner can add managers."
+  },
+  {
+    "id": "T-F6",
+    "what": "Owner B adds themself to venue A by replaying add-member with venue_id A",
+    "pass": true,
+    "evidence": "ownerB memberships in A: 0; server: 303 /venue?denied=1"
+  },
+  {
+    "id": "T-F7",
+    "what": "Player replays admin \"suspend venue\"",
+    "pass": true,
+    "evidence": "venue A status active; server: 303 /account?denied=admin"
+  },
+  {
+    "id": "T-F8",
+    "what": "Player replays admin \"make admin\" on themself",
+    "pass": true,
+    "evidence": "role user; server: 303 /account?denied=admin"
+  },
+  {
+    "id": "T-F9",
+    "what": "Another player replays \"cancel booking\" on player 1's booking",
+    "pass": true,
+    "evidence": "status confirmed; server: 303 /account?error=Booking%20not%20found."
+  },
+  {
+    "id": "T-F10",
+    "what": "Another player replays \"post message\" on player 1's booking",
+    "pass": true,
+    "evidence": "intruder messages 0; server: 303 /account"
+  },
+  {
+    "id": "T-F11",
+    "what": "Owner B replays \"cancel booking\" on a venue A booking",
+    "pass": true,
+    "evidence": "status confirmed; server: 303 /account?error=Booking%20not%20found."
+  },
+  {
+    "id": "T-F12",
+    "what": "Owner B starts venue A open-play session (venue_id B and A)",
+    "pass": true,
+    "evidence": "status scheduled; server: 303 /venue/180093c1-c4eb-4e70-a156-e8c7fd1010a6?tab=openplay | 303 /venue?denied=1"
+  },
+  {
+    "id": "T-F13",
+    "what": "Signed-out visitor replays a venue action (walk-in style add court)",
+    "pass": true,
+    "evidence": "courts 2→2; server: 303 /login?next=%2Fvenue%2Fd20e722b-5e28-46aa-9c48-d0796b44e8b1"
+  },
+  {
+    "id": "T-W1",
+    "what": "Booked slot is no longer offered to other players",
+    "pass": true,
+    "evidence": "12:00 PM offered? false (17 slots)"
+  },
+  {
+    "id": "T-W2",
+    "what": "Two players racing for the same slot: exactly one gets it",
+    "pass": true,
+    "evidence": "active rows=1; p2→/bookings/764f7602-7021-4452-8197-c9b986709030 | mgr→ror=That time was just taken. Please pick another."
+  },
+  {
+    "id": "T-W3",
+    "what": "Expired hold frees the slot",
+    "pass": true,
+    "evidence": "cancelled / Hold expired"
+  },
+  {
+    "id": "T-W4",
+    "what": "Suspended venue disappears from listings and refuses new holds",
+    "pass": true,
+    "evidence": "listed 0, venue page HTTP 404"
+  },
+  {
+    "id": "T-W5",
+    "what": "Cut recorded on an online booking and on a staff walk-in (20% of the court price)",
+    "pass": true,
+    "evidence": "online fee 10000, walk-in fee 10000; server: 303 1?tab=calendar&date=2026-11-19&ok=Walk-in added for Walk QA."
+  },
+  {
+    "id": "T-V1",
+    "what": "Venue registration rejects missing business details",
+    "pass": true,
+    "evidence": "venues 2→2, /venue/new?error=Enter the registered business name."
+  },
+  {
+    "id": "T-V2",
+    "what": "Court rate must be positive",
+    "pass": true,
+    "evidence": "rate 50000→50000; =courts&error=Enter a valid hourly rate."
+  },
+  {
+    "id": "T-V3",
+    "what": "Empty chat message is rejected",
+    "pass": true,
+    "evidence": "messages 0→0"
+  },
+  {
+    "id": "T-V4",
+    "what": "Booking more than 14 days ahead is refused",
+    "pass": true,
+    "evidence": "bookings on 2026-12-18: 0; 60&sport=pickleball&error=Bookings open up to 14 days ahead."
+  },
+  {
+    "id": "T-U1",
+    "what": "No horizontal overflow at 360px on key app screens",
+    "pass": true,
+    "evidence": "14 screens fit"
+  }
+]

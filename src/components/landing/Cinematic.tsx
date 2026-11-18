@@ -1,4 +1,5 @@
 "use client";
+import Image from "next/image";
 import Link from "next/link";
 // Orchestrates the cinematic experience: one fixed WebGL canvas, a master
 // scroll timeline (GSAP ScrollTrigger, native scrolling), HTML overlay
@@ -302,6 +303,13 @@ function ChapterPanel({ id, card, right }: { id: "book" | "play" | "replay"; car
   );
 }
 
+/**
+ * Photos for the still (reduced-motion / no-3D) story, one per chapter: 4:3, saved as
+ * public/assets/journey/<chapter>.webp. A chapter with no entry here keeps its drawn illustration,
+ * so add each file name only once the image is in place (prompts: docs/JOURNEY_IMAGE_PROMPTS.md).
+ */
+const JOURNEY_PHOTOS: Partial<Record<"book" | "play" | "replay", { src: string; alt: string }>> = {};
+
 function StaticJourney({ webglFailed }: { webglFailed: boolean }) {
   const { open } = useBooking();
   const chapters = [
@@ -341,8 +349,12 @@ function StaticJourney({ webglFailed }: { webglFailed: boolean }) {
                 <p className="lede">{c.body}</p>
                 <div style={{ marginTop: 20 }}>{ch.card}</div>
               </div>
-              <div className="static-art" style={{ aspectRatio: "4 / 3" }}>
-                <SportArt sport={ch.art} idSuffix="-static" />
+              <div className="static-art" style={{ aspectRatio: "4 / 3", position: "relative" }}>
+                {JOURNEY_PHOTOS[ch.id] ? (
+                  <Image src={JOURNEY_PHOTOS[ch.id]!.src} alt={JOURNEY_PHOTOS[ch.id]!.alt} fill sizes="(max-width: 760px) 100vw, 46vw" style={{ objectFit: "cover" }} />
+                ) : (
+                  <SportArt sport={ch.art} idSuffix="-static" />
+                )}
               </div>
             </div>
           </section>
